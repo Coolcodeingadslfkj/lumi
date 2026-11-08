@@ -9,6 +9,7 @@ use egui::{vec2, Align, Color32, Layout, RichText, Sense, Stroke, Ui};
 pub fn review(app: &mut App, ui: &mut Ui) {
     let p = app.pal;
     super::heading(ui, &p, "Spaced review 🧠", "Lumi schedules each concept to come back right before you'd forget it. Short reviews now mean you won't have to relearn it later.");
+    lightning_card(app, ui);
     let courses: Vec<(Course, usize)> = Course::all(&app.db).into_iter().map(|c| { let n = game::due_concepts(&app.db, Some(c.id)).len(); (c, n) }).filter(|x| x.1 > 0).collect();
     if courses.is_empty() {
         card(&p).show(ui, |ui| {
@@ -39,6 +40,38 @@ pub fn review(app: &mut App, ui: &mut Ui) {
             }
         });
     });
+}
+
+/// Lightning Round launcher: one card per course with enough saved questions.
+fn lightning_card(app: &mut App, ui: &mut Ui) {
+    let p = app.pal;
+    let courses: Vec<(Course, usize)> = Course::all(&app.db).into_iter().map(|c| { let n = game::bank_size(&app.db, Some(c.id)); (c, n) }).filter(|x| x.1 >= game::LIGHTNING_MIN).collect();
+    let best: i64 = app.db.get_or("lightning_best", 0);
+    card_glow(&p).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("⚡").size(46.0));
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Lightning Round").font(bold(22.0)));
+                ui.label(RichText::new(format!("{}s. Answer as many as you can. Uses questions you've already seen, so it works offline and costs no AI.", game::LIGHTNING_SECONDS as i64)).color(p.muted));
+                if best > 0 {
+                    ui.label(RichText::new(format!("🏆 Your best: {best} correct")).font(bold(14.0)).color(p.gold));
+                }
+                ui.add_space(6.0);
+                if courses.is_empty() {
+                    ui.label(RichText::new(format!("Answer at least {} questions in practice or lessons to unlock it.", game::LIGHTNING_MIN)).color(p.faint));
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for (c, n) in &courses {
+                        if widgets::button(ui, &format!("{} {}", c.emoji, c.name), p.gold, true).on_hover_text(format!("{n} saved questions")).clicked() {
+                            super::quiz::start(app, super::quiz::Request { course_id: Some(c.id), mode: "lightning".into(), kind: Some("lightning".into()), ..Default::default() });
+                        }
+                    }
+                });
+            });
+        });
+    });
+    ui.add_space(16.0);
 }
 
 pub fn mistakes(app: &mut App, ui: &mut Ui, filter: Option<i64>) {
@@ -485,6 +518,11 @@ pub fn settings(app: &mut App, ui: &mut Ui) {
         ui.add_space(10.0);
         ui.label(RichText::new(format!("Your data lives in {}", app.db.data_dir.display())).size(12.5).color(p.faint));
         ui.label(RichText::new(format!("Lumi {}", env!("CARGO_PKG_VERSION"))).size(12.5).color(p.faint));
+    });
+    super::section(ui, &p, "📦 Backup");
+    card(&p).show(ui, |ui| {
+        ui.set_width(ui.available_width().min(680.0));
+        super::extras::backup_section(app, ui);
     });
     if test_keys {
         app.keys_tested.clear();

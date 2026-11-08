@@ -67,6 +67,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         if d.due > 0 && widgets::button(ui, &format!("Review {} due", d.due), p.surface2, true).clicked() {
                             app.go(Route::Review);
                         }
+                        if d.bank >= game::LIGHTNING_MIN && widgets::button(ui, "⚡ Lightning", p.surface2, true).on_hover_text("60 seconds, as many as you can. Uses questions you've already seen, so it works offline and costs no AI.").clicked() {
+                            super::quiz::start(app, super::quiz::Request { mode: "lightning".into(), kind: Some("lightning".into()), ..Default::default() });
+                        }
                     }
                 });
             });

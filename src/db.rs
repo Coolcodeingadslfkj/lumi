@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS quizzes (
     xp INTEGER, seconds INTEGER, created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(text, material_id UNINDEXED, page UNINDEXED);
+-- every auto-gradable question Lumi has written, so Lightning Rounds work offline
+CREATE TABLE IF NOT EXISTS question_bank(
+  id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL, concept_id INTEGER, prompt TEXT NOT NULL,
+  question TEXT NOT NULL, added TEXT DEFAULT (datetime('now')), UNIQUE(course_id, prompt));
+-- explanations saved from lessons
+CREATE TABLE IF NOT EXISTS notes(
+  id INTEGER PRIMARY KEY, course_id INTEGER, concept_id INTEGER, session_id INTEGER,
+  title TEXT NOT NULL, body TEXT NOT NULL, created TEXT DEFAULT (datetime('now')));
 "#;
 
 pub type Shared = Arc<Db>;
@@ -100,6 +108,11 @@ impl Db {
             eprintln!("[lumi] db error: {e} in {sql}");
         }
         c.last_insert_rowid()
+    }
+
+    /// Like `exec`, but reports failure to the caller.
+    pub fn exec_checked(&self, sql: &str, args: &[&dyn ToSql]) -> rusqlite::Result<usize> {
+        self.conn.lock().unwrap().execute(sql, args)
     }
 
     pub fn query<T>(&self, sql: &str, args: &[&dyn ToSql], mut f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Vec<T> {
@@ -189,6 +202,11 @@ fn migrate(c: &Connection) -> rusqlite::Result<()> {
     }
     // Older versions stored the AI choice as "gemini"; it is now the multi-AI free mode.
     c.execute("UPDATE settings SET value='\"free\"' WHERE key='provider' AND value='\"gemini\"'", [])?;
+    // seed the Lightning Round question bank from questions saved before it existed
+    c.execute("INSERT OR IGNORE INTO question_bank(course_id, concept_id, prompt, question) \
+               SELECT course_id, concept_id, json_extract(question, '$.prompt'), json_remove(question, '$.mistake_id') FROM mistakes \
+               WHERE json_valid(question) AND json_extract(question, '$.type') IN ('multiple_choice', 'true_false', 'fill_blank') \
+               AND coalesce(json_extract(question, '$.prompt'), '') != ''", [])?;
     Ok(())
 }
 

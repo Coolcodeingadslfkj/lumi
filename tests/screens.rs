@@ -43,6 +43,12 @@ fn seed(db: &Db) {
         {"role": "assistant", "via": "gemini", "content": [{"type": "text", "text": "**Contraposition** says $p \\to q$ is equivalent to $\\neg q \\to \\neg p$.\n\nFor all integers $n$, if $n^2$ is even then $n$ is even.\n\n```check\n{\"question\": \"What is the contrapositive of p → q?\", \"options\": [\"q → p\", \"¬q → ¬p\", \"¬p → ¬q\"], \"answer\": 1, \"explanation\": \"Swap and negate both.\"}\n```"}]}
     ]);
     db.exec("UPDATE sessions SET messages=? WHERE id=?", &[&msgs.to_string(), &sid]);
+    db.exec("INSERT INTO notes(course_id, concept_id, session_id, title, body) VALUES(?,?,?,?,?)",
+        &[&cid, &3i64, &sid, &"Contraposition in one line", &"**Contraposition:** $p \\to q$ is equivalent to $\\neg q \\to \\neg p$.\n\n> 🧩 What is the contrapositive of p → q?\n>\n> **Answer:** ¬q → ¬p"]);
+    // a few answered questions, so Lightning Rounds unlock
+    for (i, (prompt, ans)) in [("$2+2=4$", 0), ("Every even number is divisible by 4.", 1), ("$\\neg(p \\land q) \\equiv \\neg p \\lor \\neg q$", 0), ("Induction needs a base case.", 0), ("$\\sqrt{2}$ is rational.", 1), ("A proof by contraposition proves $\\neg q \\to \\neg p$.", 0)].iter().enumerate() {
+        lumi::game::bank_question(db, cid, Some((i % 3 + 1) as i64), &json!({"type": "true_false", "prompt": prompt, "options": ["True", "False"], "correct_index": ans, "explanation": ""}));
+    }
 }
 
 #[test]
@@ -58,7 +64,7 @@ fn render_all_screens() {
     let routes = [
         ("home", Route::Home), ("courses", Route::Courses), ("path", Route::Course(1, Tab::Path)), ("materials", Route::Course(1, Tab::Materials)),
         ("lessons", Route::Course(1, Tab::Lessons)), ("learn", Route::Learn(1)), ("tests", Route::Tests), ("test", Route::Test(1)),
-        ("review", Route::Review), ("mistakes", Route::Mistakes(None)), ("achievements", Route::Achievements), ("shop", Route::Shop), ("settings", Route::Settings),
+        ("review", Route::Review), ("mistakes", Route::Mistakes(None)), ("achievements", Route::Achievements), ("shop", Route::Shop), ("settings", Route::Settings), ("notes", Route::Notes(None)),
     ];
     let mut app: Option<App> = None;
     let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1360.0, 900.0)).wgpu().build_ui(|ui| {
@@ -156,6 +162,37 @@ fn render_quiz_screens() {
     h.run_steps(2);
     h.key_press(Key::Enter);
     shot(&mut h, "q_boss_results");
+    // lightning round from the question bank (works without AI)
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::unique("test_quiz"), None::<(lumi::ui::quiz::Request, lumi::ui::quiz::Data)>));
+    let (cid, qs) = lumi::game::lightning_questions(&db, Some(1)).expect("bank has questions");
+    let req = lumi::ui::quiz::Request { course_id: Some(cid), mode: "lightning".into(), kind: Some("lightning".into()), ..Default::default() };
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::unique("test_quiz"), Some((req, lumi::ui::quiz::Data { course_id: cid, concepts: vec![], questions: qs, via: "Your question bank".into() }))));
+    h.run_steps(3);
+    shot(&mut h, "q_lightning");
+}
+
+#[test]
+fn render_search_and_focus() {
+    let dir = std::env::temp_dir().join(format!("lumi-search-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    unsafe { std::env::set_var("LUMI_NO_AUTOSTART", "1") };
+    let db = Db::open_at(&dir).unwrap();
+    seed(&db);
+    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/screens");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut app: Option<App> = None;
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1360.0, 900.0)).wgpu().build_ui(|ui| {
+        let a = app.get_or_insert_with(|| App::with_ctx(ui.ctx().clone(), db.clone()));
+        a.frame(ui);
+    });
+    h.run_steps(3);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    h.run_steps(3);
+    h.event(egui::Event::Text("contra".into()));
+    h.run_steps(4);
+    if let Ok(img) = h.render() {
+        img.save(out.join("search.png")).unwrap();
+    }
 }
 
 /// The whole shop in one tall image (target/screens/shop_full.png), for previewing new items.

@@ -39,6 +39,12 @@ fn load(app: &App, sid: i64) -> State {
     State { sid, msgs, input: String::new(), streaming: None, error: None, combo: 0, auto_started: false }
 }
 
+/// Open a lesson and ask Lumi something right away.
+pub fn open_with(app: &mut App, sid: i64, text: String) {
+    app.learn = Some(load(app, sid));
+    send(app, text, false);
+}
+
 pub fn send(app: &mut App, text: String, auto: bool) {
     let Some(st) = app.learn.as_mut() else { return };
     if st.streaming.is_some() {
@@ -250,9 +256,15 @@ fn messages(app: &mut App, ui: &mut Ui, session: &Session, course: &Course) {
             let via = m.via.clone();
             assistant_bubble(app, ui, |app, ui| {
                 render_reply(app, ui, &text, i, false);
-                if let Some(v) = via {
-                    ui.label(RichText::new(format!("via {v}")).size(11.0).color(app.pal.faint));
-                }
+                ui.horizontal(|ui| {
+                    if let Some(v) = via {
+                        ui.label(RichText::new(format!("via {v}")).size(11.0).color(app.pal.faint));
+                    }
+                    let save = egui::Button::new(RichText::new("🔖 Save").size(11.0).color(app.pal.muted)).frame(false);
+                    if ui.add(save).on_hover_text("Save this explanation to your Notes").clicked() {
+                        super::extras::save_note(app, &text);
+                    }
+                });
             });
         }
         ui.add_space(12.0);

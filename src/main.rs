@@ -2,6 +2,15 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")] // no console window on Windows
 
 fn main() {
+    let reminders = std::env::args().any(|a| a == "--reminders");
+    // a backup chosen in Settings is swapped in before the database opens
+    let restored = !reminders && match lumi::backup::finish_pending_restore(&lumi::db::data_dir()) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Lumi couldn't finish restoring the backup: {e}");
+            false
+        }
+    };
     let db = match lumi::db::Db::open() {
         Ok(db) => db,
         Err(e) => {
@@ -9,7 +18,10 @@ fn main() {
             std::process::exit(1);
         }
     };
-    if std::env::args().any(|a| a == "--reminders") {
+    if restored {
+        db.set("restored_notice", &true);
+    }
+    if reminders {
         lumi::reminders::run_daemon(&db); // background daily-reminder helper started at login
         return;
     }

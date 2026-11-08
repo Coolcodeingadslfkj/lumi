@@ -30,6 +30,12 @@ Claude key.
 - **Motivation:** XP and levels, streaks with freezes, daily quests and a chest, achievements, Lumi
   evolving as you level up, and a gem shop with hats, accessories, confetti styles, themes, Double XP and
   mystery boxes.
+- **Lightning Round:** 60 seconds, as many as you can, using questions you've already answered. It works
+  offline and uses no AI quota, and it tracks your high score.
+- **Focus timer:** a 25-minute focus session with a 5-minute break (Pomodoro), right in the sidebar.
+- **Notes:** save Lumi's best explanations with 🔖, then copy them or export them all to Markdown.
+- **Search everything (Ctrl+K):** concepts, notes, lessons, and every page of your textbooks, instantly.
+- **Backup & restore:** move everything to another computer with one file (API keys are left out).
 - **Desktop reminders** (optional) so you keep your streak.
 
 ## Install
@@ -116,6 +122,7 @@ You can also set keys with environment variables instead: `GEMINI_API_KEY`, `GRO
   - macOS: `~/Library/Application Support/Lumi/`
 
   Set `LUMI_DATA_DIR` to use another folder. On Linux and macOS, the database is readable only by you.
+- Backups made in Settings contain your courses, files and progress, but never your API keys.
 - Lumi has no accounts, servers, analytics or telemetry. It only connects to the AI providers you add
   keys for, and it sends them the parts of your material that a lesson or quiz needs.
 - Free AI tiers may use what you send them to improve their models. Check each provider's terms before

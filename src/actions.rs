@@ -59,6 +59,9 @@ pub fn answer(db: &Db, a: &Answer) -> Events {
     if a.from_check_card {
         game::quest_bump(db, "checks", 1);
     }
+    if let (Some(q), Some(course)) = (a.question, a.course_id.or_else(|| a.concept_id.and_then(|c| Concept::get(db, c)).map(|c| c.course_id))) {
+        game::bank_question(db, course, a.concept_id, q);
+    }
     let xp = if a.correct && !a.retry { 10 + (2 * (a.combo - 1).max(0)).min(10) } else if a.correct { 5 } else { 0 };
     let mut ev = game::award(db, xp, 1, a.correct as i64);
     if let Some(cid) = a.concept_id.filter(|c| *c > 0) {
@@ -168,6 +171,27 @@ pub fn finish(db: &Db, f: &Finish) -> FinishOut {
     FinishOut { events: ev, bonus, perfect, test_message, mock_score, concepts: Concept::many(db, &ids) }
 }
 
+/// One-time: put check questions from past lessons into the Lightning question bank.
+pub fn seed_bank_from_lessons(db: &Db) {
+    if db.get_or("bank_seeded_lessons", false) {
+        return;
+    }
+    let ids = db.query("SELECT id FROM sessions", &[], |r| r.get::<_, i64>(0));
+    for s in ids.into_iter().filter_map(|id| crate::model::Session::get(db, id)) {
+        for m in s.messages.iter().filter(|m| m["role"] == "assistant") {
+            let text: String = m["content"].as_array().into_iter().flatten().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect();
+            for seg in crate::ui::md::segments(&text, false) {
+                if let crate::ui::md::Segment::Check(q) = seg {
+                    let opts = q["options"].clone();
+                    let q = json!({"type": "multiple_choice", "prompt": q["question"], "options": opts, "correct_index": q["answer"], "explanation": q["explanation"]});
+                    game::bank_question(db, s.course_id, s.concept_id, &q);
+                }
+            }
+        }
+    }
+    db.set("bank_seeded_lessons", &true);
+}
+
 pub fn new_course(db: &Db, name: &str, goal: &str, emoji: &str) -> i64 {
     const COLORS: [&str; 6] = ["#7c5cff", "#ff6b9a", "#22c58b", "#ffb020", "#2fa8ff", "#ff7a45"];
     let n = db.int("SELECT COUNT(*) FROM courses", &[]) as usize;
@@ -183,7 +207,7 @@ pub fn delete_course(db: &Db, cid: i64) {
     for tid in db.query("SELECT id FROM tests WHERE course_id=?", &[&cid], |r| r.get::<_, i64>(0)) {
         delete_test(db, tid);
     }
-    for t in ["concepts", "sessions", "mistakes", "bosses"] {
+    for t in ["concepts", "sessions", "mistakes", "bosses", "question_bank", "notes"] {
         db.exec(&format!("DELETE FROM {t} WHERE course_id=?"), &[&cid]);
     }
     db.exec("DELETE FROM courses WHERE id=?", &[&cid]);

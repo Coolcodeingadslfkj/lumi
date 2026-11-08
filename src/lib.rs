@@ -1,5 +1,6 @@
 //! Lumi: a personal AI tutor. Native desktop app (egui), no web view.
 pub mod actions;
+pub mod backup;
 pub mod ai;
 pub mod db;
 pub mod game;

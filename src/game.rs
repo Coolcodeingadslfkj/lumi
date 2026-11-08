@@ -58,6 +58,9 @@ pub const ACHIEVEMENTS: &[Achievement] = &[
     ach!("quest_7", "Questing", "Open 7 daily chests", "🎁"),
     ach!("shopper", "Fresh Look", "Buy something in the shop", "🛍️"),
     ach!("collector", "Collector", "Own 10 items from the shop", "🧺"),
+    ach!("lightning_20", "Lightning Fast", "Get 20 right in one Lightning Round", "⚡"),
+    ach!("deep_focus", "Deep Focus", "Finish 5 focus sessions", "🍅"),
+    ach!("note_taker", "Note Taker", "Save 5 explanations to your notes", "🔖"),
     ach!("evolved", "Glow Up", "Help Lumi evolve", "🌟"),
 ];
 
@@ -306,6 +309,8 @@ pub const QUEST_POOL: &[(&str, &str, &[i64])] = &[
     ("fixed", "Fix {n} mistakes from your notebook", &[2, 3]),
     ("review", "Complete a spaced review", &[1]),
     ("boss", "Defeat a unit boss", &[1]),
+    ("lightning", "Play {n} Lightning Rounds", &[1, 2]),
+    ("focus", "Finish {n} focus sessions", &[1, 2]),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -335,6 +340,10 @@ pub fn todays_quests(db: &Db) -> Vec<Quest> {
     if has_concepts {
         keys.push("boss");
     }
+    if db.int("SELECT COUNT(*) FROM question_bank", &[]) >= LIGHTNING_MIN as i64 {
+        keys.push("lightning");
+    }
+    keys.push("focus");
     let mut picked = vec!["xp"]; // always one XP quest
     while picked.len() < 3 && !keys.is_empty() {
         let i = rng.random_range(0..keys.len());
@@ -439,6 +448,85 @@ pub fn owned(db: &Db) -> Vec<String> {
 
 /// Buy an item; Err(reason) when not possible.
 pub const DOUBLE_XP_MINUTES: i64 = 15;
+
+// ---------- lightning round ----------
+
+/// Question types that can be graded instantly, offline.
+pub const LIGHTNING_TYPES: [&str; 3] = ["multiple_choice", "true_false", "fill_blank"];
+pub const LIGHTNING_SECONDS: f64 = 60.0;
+/// Fewest saved questions needed for a round.
+pub const LIGHTNING_MIN: usize = 5;
+
+/// Keep a question Lumi wrote so it can come back in Lightning Rounds.
+pub fn bank_question(db: &Db, course_id: i64, concept_id: Option<i64>, q: &serde_json::Value) {
+    let prompt = q["prompt"].as_str().unwrap_or("").trim();
+    if prompt.is_empty() || !LIGHTNING_TYPES.contains(&q["type"].as_str().unwrap_or("")) {
+        return;
+    }
+    let mut q = q.clone();
+    if let Some(o) = q.as_object_mut() {
+        o.remove("mistake_id");
+    }
+    db.exec("INSERT OR IGNORE INTO question_bank(course_id, concept_id, prompt, question) VALUES(?,?,?,?)",
+        &[&course_id, &concept_id.filter(|c| *c > 0), &prompt, &q.to_string()]);
+}
+
+pub fn bank_size(db: &Db, course_id: Option<i64>) -> usize {
+    match course_id {
+        Some(c) => db.int("SELECT COUNT(*) FROM question_bank WHERE course_id=?", &[&c]) as usize,
+        None => db.int("SELECT COUNT(*) FROM question_bank", &[]) as usize,
+    }
+}
+
+/// Shuffled questions for a round: the given course, or the course with the most saved questions.
+pub fn lightning_questions(db: &Db, course_id: Option<i64>) -> Option<(i64, Vec<serde_json::Value>)> {
+    let cid = course_id.or_else(|| db.one("SELECT course_id FROM question_bank GROUP BY course_id ORDER BY COUNT(*) DESC LIMIT 1", &[], |r| r.get(0)))?;
+    let rows = db.query("SELECT question, concept_id FROM question_bank WHERE course_id=? ORDER BY RANDOM() LIMIT 80", &[&cid], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))
+    });
+    let qs: Vec<serde_json::Value> = rows
+        .into_iter()
+        .filter_map(|(q, c)| {
+            let mut v: serde_json::Value = serde_json::from_str(&q).ok()?;
+            v["concept_id"] = serde_json::json!(c.unwrap_or(0));
+            Some(v)
+        })
+        .collect();
+    (qs.len() >= LIGHTNING_MIN).then_some((cid, qs))
+}
+
+/// Record a finished round's score. Returns the previous best when this one beats it.
+pub fn lightning_score(db: &Db, score: i64, ev: &mut Events) -> Option<i64> {
+    let best: i64 = db.get_or("lightning_best", 0);
+    quest_bump(db, "lightning", 1);
+    if score >= 20 {
+        unlock(db, "lightning_20", ev);
+    }
+    if score > best {
+        db.set("lightning_best", &score);
+        if score >= LIGHTNING_MIN as i64 {
+            add_gems(db, 5, ev);
+        }
+        return Some(best);
+    }
+    None
+}
+
+// ---------- focus timer ----------
+
+pub const FOCUS_MINUTES: i64 = 25;
+pub const BREAK_MINUTES: i64 = 5;
+
+/// A focus session finished: XP, quest, counters.
+pub fn focus_done(db: &Db, minutes: i64) -> Events {
+    let mut ev = award(db, 15, 0, 0);
+    quest_bump(db, "focus", 1);
+    db.set("focus_minutes", &(db.get_or::<i64>("focus_minutes", 0) + minutes));
+    if counter(db, "focus") >= 5 {
+        unlock(db, "deep_focus", &mut ev);
+    }
+    ev
+}
 
 pub fn double_xp_active(db: &Db) -> bool {
     db.get_or::<i64>("double_xp_until", 0) > chrono::Utc::now().timestamp()

@@ -19,7 +19,7 @@ pub struct Request {
     pub concept_ids: Vec<i64>,
     pub count: usize,
     pub review: bool,
-    pub mode: String,         // practice | challenge | boss
+    pub mode: String,         // practice | challenge | boss | lightning
     pub kind: Option<String>, // diagnostic | practice | mock | mistakes | boss
     pub test_id: Option<i64>,
     pub boss: Option<(String, Color32, i64)>, // name, color, unit_idx
@@ -99,6 +99,16 @@ pub struct Run {
     req_id: u64,
     out: Option<FinishOut>,
     before: HashMap<i64, f64>,
+    /// Lightning Round: when the clock runs out, and the best score before this round if it was beaten.
+    deadline: f64,
+    record: Option<i64>,
+    t_end: f64,
+}
+
+impl Run {
+    fn lightning(&self) -> bool {
+        self.req.mode == "lightning"
+    }
 }
 
 const PRAISE: [&str; 8] = ["Nice!", "Excellent!", "You got it!", "Brilliant!", "Spot on!", "Great job!", "Nailed it!", "Perfect!"];
@@ -112,6 +122,14 @@ fn pick<T: Copy>(a: &[T]) -> T {
 // ---------- starting ----------
 
 pub fn start(app: &mut App, req: Request) {
+    if req.mode == "lightning" {
+        // offline: questions come from the bank, no AI needed
+        let r = game::lightning_questions(&app.db, req.course_id)
+            .map(|(course_id, questions)| Data { course_id, concepts: Vec::new(), questions, via: "Your question bank".into() })
+            .ok_or_else(|| "Lightning Rounds use questions you've already answered. Finish a practice session or two first!".to_string());
+        on_ready(app, req, r);
+        return;
+    }
     if !app.dash.has_key {
         app.error("Add an AI key in Settings first.");
         return;
@@ -189,7 +207,7 @@ pub fn on_ready(app: &mut App, req: Request, r: Result<Data, String>) {
             let mut run = Run {
                 req, data, queue, cur: None, q: QState::default(), phase: Phase::Answer, total, results: HashMap::new(), solved: 0,
                 combo: 0, best: 0, hearts: 3, xp: 0, first_right: 0, t0, deferred: Events::default(), boss_hp: boss_max, boss_max,
-                boss_hit: -10.0, hurt: -10.0, req_id: 0, out: None, before,
+                boss_hit: -10.0, hurt: -10.0, req_id: 0, out: None, before, deadline: t0 + game::LIGHTNING_SECONDS, record: None, t_end: 0.0,
             };
             next(&mut run);
             app.quiz = Some(run);
@@ -332,6 +350,10 @@ fn check(app: &mut App, skipped: bool) {
         }
     }
     apply_result(app, ok, false, typo, user_text, None);
+    // Lightning Round: keep the pace up; wrong answers still show the right one
+    if ok && app.quiz.as_ref().is_some_and(|r| r.lightning()) {
+        advance(app);
+    }
 }
 
 fn apply_result(app: &mut App, ok: bool, partial: bool, typo: Option<String>, user_text: String, grade: Option<(String, String, f64)>) {
@@ -342,7 +364,7 @@ fn apply_result(app: &mut App, ok: bool, partial: bool, typo: Option<String>, us
     let retry = item.retry;
     let tries = item.tries;
     let concept = q["concept_id"].as_i64().unwrap_or(0);
-    let exam = run.data.questions.is_empty() || run.req.kind.as_deref() == Some("mock") || run.req.mode == "boss";
+    let exam = run.data.questions.is_empty() || run.req.kind.as_deref() == Some("mock") || run.req.mode == "boss" || run.lightning();
     if !retry {
         run.results.entry(concept).or_default().push(ok);
         if ok {
@@ -456,6 +478,10 @@ fn advance(app: &mut App) {
 fn finish(app: &mut App) {
     let now = app.ctx.input(|i| i.time);
     let Some(run) = app.quiz.as_mut() else { return };
+    run.t_end = now;
+    if run.lightning() {
+        run.total = run.results.values().map(|v| v.len()).sum(); // questions actually answered
+    }
     let won = run.req.mode == "boss" && run.boss_hp <= 0;
     let boss = run.req.boss.as_ref().map(|b| (b.2, won));
     let out = actions::finish(&app.db, &Finish {
@@ -463,6 +489,9 @@ fn finish(app: &mut App) {
         kind: run.req.kind.as_deref(), review: run.req.review, hearts_left: run.hearts, test_id: run.req.test_id, boss,
     });
     let mut ev = out.events.clone();
+    if run.lightning() {
+        run.record = game::lightning_score(&app.db, run.first_right as i64, &mut ev);
+    }
     ev.level_up = ev.level_up.or(run.deferred.level_up);
     ev.goal_hit |= run.deferred.goal_hit;
     ev.evolved = ev.evolved.take().or(run.deferred.evolved.take());
@@ -500,6 +529,13 @@ pub fn close(app: &mut App) {
 pub fn show(app: &mut App, ui: &mut Ui) {
     let p = app.pal;
     let now = ui.input(|i| i.time);
+    if app.quiz.as_ref().is_some_and(|r| r.lightning() && !matches!(r.phase, Phase::Results)) {
+        if now >= app.quiz.as_ref().unwrap().deadline {
+            finish(app);
+        } else {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
     let Some(run) = app.quiz.as_ref() else { return };
     let hurt = now - run.hurt < 0.4;
     let shake = if hurt { ((now * 60.0).sin() * 8.0) as f32 } else { 0.0 };
@@ -523,9 +559,18 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 return;
             }
             let run = app.quiz.as_ref().unwrap();
-            let frac = if matches!(run.phase, Phase::Results) { 1.0 } else { run.solved as f32 / run.total.max(1) as f32 };
             let right = 190.0;
-            widgets::progress(ui, frac, p.green, 16.0, (ui.available_width() - right).max(100.0));
+            if run.lightning() {
+                // the bar is the clock
+                let left = if matches!(run.phase, Phase::Results) { 0.0 } else { (run.deadline - now).max(0.0) };
+                let color = if left < 10.0 { p.red } else if left < 25.0 { p.gold } else { p.primary2 };
+                widgets::progress(ui, (left / game::LIGHTNING_SECONDS) as f32, color, 16.0, (ui.available_width() - right - 60.0).max(100.0));
+                ui.label(RichText::new(format!("⏱ {}", left.ceil() as i64)).font(bold(18.0)).color(color));
+                ui.label(RichText::new(format!("⚡ {}", run.first_right)).font(bold(18.0)).color(p.gold)).on_hover_text("Correct answers this round");
+            } else {
+                let frac = if matches!(run.phase, Phase::Results) { 1.0 } else { run.solved as f32 / run.total.max(1) as f32 };
+                widgets::progress(ui, frac, p.green, 16.0, (ui.available_width() - right).max(100.0));
+            }
             ui.label(RichText::new(format!("✍️ {}", run.data.via)).size(11.0).color(p.faint)).on_hover_text("The AI that wrote these questions");
             if run.combo >= 2 {
                 ui.label(RichText::new(format!("🔥 {}", run.combo)).font(bold(18.0)).color(p.flame));
@@ -995,12 +1040,16 @@ fn footer(app: &mut App, ui: &mut Ui) {
         }
         Phase::Results => {
             let lost = run.req.mode == "boss" && run.boss_hp > 0;
+            let lightning = run.lightning();
             let back = matches!(run.req.return_to, Some(Route::Test(_)));
             ui.horizontal(|ui| {
-                if lost && widgets::button(ui, "⚔️ Rematch", p.surface2, true).clicked() {
-                    let req = app.quiz.take().unwrap().req;
-                    start(app, req);
-                    return;
+                let again = if lost { Some("⚔️ Rematch") } else if lightning { Some("⚡ Play again") } else { None };
+                if let Some(label) = again {
+                    if widgets::button(ui, label, p.surface2, true).clicked() {
+                        let req = app.quiz.take().unwrap().req;
+                        start(app, req);
+                        return;
+                    }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::button_sized(ui, if back { "Back to test plan" } else { "Continue" }, p.green, true, 15.0, 160.0).clicked() {
@@ -1014,11 +1063,10 @@ fn footer(app: &mut App, ui: &mut Ui) {
 
 fn results(app: &mut App, ui: &mut Ui) {
     let p = app.pal;
-    let now = ui.input(|i| i.time);
     let run = app.quiz.as_ref().unwrap();
     let Some(out) = &run.out else { return };
     let acc = if run.total > 0 { 100 * run.first_right / run.total } else { 0 };
-    let secs = (now - run.t0) as i64;
+    let secs = (run.t_end - run.t0) as i64;
     let boss = run.req.boss.clone();
     let lost = boss.is_some() && run.boss_hp > 0;
     let exam = run.req.kind.as_deref() == Some("mock");
@@ -1036,9 +1084,20 @@ fn results(app: &mut App, ui: &mut Ui) {
             ui.label(RichText::new(if lost { format!("It had {} HP left. Review the unit and come back stronger, you've got this.", run.boss_hp) } else { "Unit conquered! The boss drops a pile of gems. 💎".into() }).color(p.muted));
         } else {
             widgets::mascot_widget(ui, 160.0, Mood::Celebrate, &stage, hat.as_deref(), wear.as_deref());
+            if run.lightning() {
+                ui.label(RichText::new(format!("⚡ {} correct in {}s", run.first_right, game::LIGHTNING_SECONDS as i64)).font(bold(30.0)));
+                let best: i64 = app.db.get_or("lightning_best", 0);
+                let line = match run.record {
+                    Some(prev) if prev > 0 => format!("New high score! You beat your old best of {prev}. 🏆"),
+                    Some(_) => "Your first high score. Now beat it! 🏆".into(),
+                    None => format!("Your best is {best}. So close. Go again?"),
+                };
+                ui.label(RichText::new(line).color(if run.record.is_some() { p.gold } else { p.muted }));
+            } else {
             let title = if exam { format!("Mock exam: {}%", out.mock_score.unwrap_or(acc as i64)) } else if out.perfect { "Flawless! 💎".into() } else if acc >= 80 { "Lesson complete! 🎉".into() } else { "Practice complete! 💪".into() };
             ui.label(RichText::new(title).font(bold(30.0)));
             ui.label(RichText::new(if out.perfect { "Not a single mistake. Incredible." } else if acc >= 80 { "Strong work. That's real understanding." } else { "Every mistake you fixed today is a mistake you won't make on the test." }).color(p.muted));
+            }
         }
         if let Some(m) = &out.test_message {
             ui.add_space(10.0);

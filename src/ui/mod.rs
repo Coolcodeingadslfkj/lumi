@@ -1,6 +1,7 @@
 //! The desktop UI (egui): app state, navigation, background work, celebrations.
 
 pub mod courses;
+pub mod extras;
 pub mod home;
 pub mod learn;
 pub mod md;
@@ -40,6 +41,7 @@ pub enum Route {
     Tests,
     Test(i64),
     Settings,
+    Notes(Option<i64>),
 }
 
 /// Results coming back from background threads.
@@ -81,6 +83,8 @@ pub struct Dash {
     pub theme: Option<String>,
     /// Unix time when Double XP ends (0 = off).
     pub double_xp_until: i64,
+    /// Saved questions available for Lightning Rounds.
+    pub bank: usize,
     pub stage_key: String,
     pub stage: Option<Stage>,
     pub due: usize,
@@ -134,6 +138,7 @@ pub enum Dialog {
     Chest { gems: i64, freeze: bool, opened_at: f64 },
     Image(String),
     Welcome,
+    Search(Box<extras::Search>),
 }
 
 pub enum Confirm {
@@ -165,6 +170,7 @@ pub struct App {
     pub keys_tested: Vec<(String, Option<bool>, String)>,
     pub theme_applied: Option<Option<String>>,
     pub sound: crate::sound::Sound,
+    pub focus: Option<extras::Focus>,
 }
 
 impl App {
@@ -177,6 +183,7 @@ impl App {
         ctx.set_fonts(theme::fonts(color_emoji));
         let (tx, rx) = channel();
         crate::materials::ensure_all_background(db.clone()); // materials added by older versions
+        crate::actions::seed_bank_from_lessons(&db);
         // people upgrading from an older Lumi already have courses and don't need the intro
         let first_run = !db.get_or("welcomed", false) && db.int("SELECT COUNT(*) FROM courses", &[]) == 0;
         let mut app = App {
@@ -201,12 +208,17 @@ impl App {
             keys_tested: vec![],
             theme_applied: None,
             sound: crate::sound::Sound::new(db.get_or("sound", true)),
+            focus: None,
             db,
         };
         app.refresh();
         if let Some(n) = app.db.get::<i64>("freeze_used_notice").filter(|n| *n > 0) {
             app.db.set("freeze_used_notice", &0);
             app.toast("🧊", "A streak freeze saved your streak!", &format!("Covered {n} missed day(s)."), 1);
+        }
+        if app.db.get_or("restored_notice", false) {
+            app.db.set("restored_notice", &false);
+            app.toast("📦", "Backup restored", "Welcome back! Re-enter any AI keys this computer didn't have.", 1);
         }
         app
     }
@@ -234,6 +246,7 @@ impl App {
             celebration: db.get::<Option<String>>("celebration").flatten(),
             theme: db.get::<Option<String>>("theme").flatten(),
             double_xp_until: db.get_or("double_xp_until", 0),
+            bank: game::bank_size(db, None),
             stage_key: stage.key.to_string(),
             stage: Some(stage),
             due: game::due_concepts(db, None).len(),
@@ -397,6 +410,10 @@ impl App {
         }
         self.apply_theme();
         let ctx = ui.ctx().clone();
+        extras::focus_tick(self);
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::K)) && self.quiz.is_none() {
+            extras::open_search(self);
+        }
         let dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
         if !dropped.is_empty() {
             match &self.route {
@@ -436,6 +453,7 @@ impl App {
                                     Route::Tests => tests::list(self, ui),
                                     Route::Test(id) => tests::test(self, ui, id),
                                     Route::Settings => misc::settings(self, ui),
+                                    Route::Notes(c) => extras::notes(self, ui, c),
                                     Route::Learn(_) => {}
                                 }
                                 ui.add_space(50.0);
@@ -481,15 +499,15 @@ impl App {
             ("🎯", "Test Prep", Route::Tests),
             ("🧠", "Review", Route::Review),
             ("📓", "Mistakes", Route::Mistakes(None)),
+            ("🔖", "Notes", Route::Notes(None)),
             ("🏆", "Achievements", Route::Achievements),
             ("💎", "Shop", Route::Shop),
             ("⚙️", "Settings", Route::Settings),
-            ("", "", Route::Home),
         ];
-        for (icon, label, r) in items.into_iter().take(8) {
+        for (icon, label, r) in items {
             let active = match (&self.route, &r) {
                 (Route::Course(..), Route::Courses) | (Route::Learn(_), Route::Courses) | (Route::Test(_), Route::Tests) => true,
-                (Route::Mistakes(_), Route::Mistakes(_)) => true,
+                (Route::Mistakes(_), Route::Mistakes(_)) | (Route::Notes(_), Route::Notes(_)) => true,
                 (a, b) => a == b,
             };
             let badge = match label {
@@ -501,21 +519,37 @@ impl App {
                 self.go(r);
             }
         }
-        ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
-            widgets::card(&self.pal).show(ui, |ui| {
-                ui.set_width(170.0);
-                ui.vertical_centered(|ui| {
-                    let f = self.dash.today_xp as f32 / self.dash.goal.max(1) as f32;
-                    let done = f >= 1.0;
-                    widgets::ring(ui, &self.pal, 96.0, f, &if done { "✓".into() } else { self.dash.today_xp.to_string() },
-                        &if done { "goal hit".into() } else { format!("/ {} XP", self.dash.goal) }, if done { self.pal.gold } else { self.pal.green });
-                    ui.label(RichText::new("Daily goal").font(bold(13.0)).color(self.pal.muted));
-                });
+        // bottom cards; on short windows they're dropped rather than overlap the menu (the goal is also on Home)
+        let room = ui.available_height();
+        let (show_goal, show_focus) = (room > 300.0, room > 150.0);
+        if show_focus {
+            egui::Panel::bottom("nav_cards").frame(egui::Frame::NONE).show_separator_line(false).show(ui, |ui| {
+                if show_goal {
+                    widgets::card(&self.pal).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.vertical_centered(|ui| {
+                            let f = self.dash.today_xp as f32 / self.dash.goal.max(1) as f32;
+                            let done = f >= 1.0;
+                            widgets::ring(ui, &self.pal, 96.0, f, &if done { "✓".into() } else { self.dash.today_xp.to_string() },
+                                &if done { "goal hit".into() } else { format!("/ {} XP", self.dash.goal) }, if done { self.pal.gold } else { self.pal.green });
+                            ui.label(RichText::new("Daily goal").font(bold(13.0)).color(self.pal.muted));
+                        });
+                    });
+                    ui.add_space(10.0);
+                }
+                extras::focus_card(self, ui);
             });
-        });
+        }
     }
 
     fn topbar(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+        let p = self.pal;
+        let search = egui::Button::new(RichText::new(format!("🔍  Search everything    {}", if cfg!(target_os = "macos") { "⌘K" } else { "Ctrl+K" })).color(p.faint))
+            .fill(p.surface).stroke(egui::Stroke::new(1.5, p.line)).corner_radius(12).min_size(vec2(300.0, 36.0));
+        if ui.add(search).clicked() {
+            extras::open_search(self);
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let d = &self.dash;
             let p = self.pal;
@@ -533,6 +567,7 @@ impl App {
                 widgets::chip(ui, &p, &format!("⚡2× XP · {}:{:02}", left / 60, left % 60), p.green).on_hover_text("Double XP is active: every answer earns twice the XP");
                 ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
             }
+        });
         });
     }
 
@@ -669,6 +704,7 @@ impl App {
         let Some(mut d) = self.dialog.take() else { return };
         let keep = match &mut d {
             Dialog::Welcome => misc::welcome(self, ctx),
+            Dialog::Search(st) => extras::search_dialog(self, ctx, st),
             Dialog::NewCourse { name, goal, emoji } => courses::new_course_dialog(self, ctx, name, goal, emoji),
             Dialog::Note { course, title, text } => courses::note_dialog(self, ctx, *course, title, text),
             Dialog::Confirm { title, body, action } => self.confirm_dialog(ctx, title, body, action),
