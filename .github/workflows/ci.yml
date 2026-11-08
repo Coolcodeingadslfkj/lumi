@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  LUMI_NO_AUTOSTART: "1"
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.04 and 24.04 are the bases of Kubuntu 22.04 / 24.04
+        os: [ubuntu-22.04, ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev mesa-vulkan-drivers
+      - name: Unit tests and the shop catalog check
+        run: cargo test --release --lib
+      - name: Render every screen headlessly (software Vulkan)
+        if: runner.os == 'Linux'
+        run: cargo test --release --test screens
+      - name: Upload screenshots
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-${{ matrix.os }}
+          path: target/screens/*.png
+          if-no-files-found: ignore
+
+  release:
+    name: Release ${{ matrix.name }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Built on the oldest supported Ubuntu so the binary runs on Kubuntu/Ubuntu 22.04 and newer
+          - { name: linux-x86_64, os: ubuntu-22.04 }
+          - { name: windows-x86_64, os: windows-latest }
+          - { name: macos-arm64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
+      - run: cargo build --release
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build
+          d=lumi-${{ github.ref_name }}-${{ matrix.name }}
+          mkdir "$d"
+          cp target/release/lumi install.sh README.md LICENSE "$d/"
+          cp packaging/lumi.desktop "$d/lumi.desktop"
+          cp assets/icon.png "$d/lumi.png"
+          tar czf "$d.tar.gz" "$d"
+          cp target/debian/*.deb "lumi_${{ github.ref_name }}_amd64.deb"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $d = "lumi-${{ github.ref_name }}-${{ matrix.name }}"
+          New-Item -ItemType Directory $d | Out-Null
+          Copy-Item target/release/lumi.exe, README.md, LICENSE $d
+          Compress-Archive $d "$d.zip"
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          d=lumi-${{ github.ref_name }}-${{ matrix.name }}
+          mkdir "$d" && cp target/release/lumi README.md LICENSE "$d/"
+          tar czf "$d.tar.gz" "$d"
+      - name: Upload to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.zip
+            *.deb
+          generate_release_notes: true
