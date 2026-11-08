@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Lumi
+GenericName=AI Tutor
+Comment=A personal AI tutor for your textbooks, notes and tests
+Exec=lumi
+Icon=lumi
+Terminal=false
+Categories=Education;
+Keywords=study;learn;tutor;quiz;flashcards;
+StartupWMClass=lumi

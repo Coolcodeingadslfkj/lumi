@@ -1,0 +1,55 @@
+[package]
+name = "lumi"
+description = "Lumi: a personal AI tutor that turns your textbooks and notes into lessons, quizzes and test prep"
+license = "MIT"
+repository = "https://github.com/Coolcodeingadslfkj/lumi"
+readme = "README.md"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.23.1"
+chrono = "0.4.45"
+dirs = "7.0.0"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+egui = "0.37.0"
+egui_commonmark = { version = "0.26.0", default-features = false, features = ["pulldown_cmark"] }
+egui_extras = { version = "0.37.0", default-features = false, features = ["datepicker"] }
+epaint = { version = "0.37.0", features = ["color_fonts", "monochrome_emoji_fonts"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+jiff = { version = "0.2.39", default-features = false, features = ["std"] }
+lopdf = "0.42"
+pdf-extract = "0.12.1"
+rand = "0.10.3"
+regex = "1.13.1"
+rfd = "0.18.0"
+rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+ureq = { version = "3.5.1", features = ["json"] }
+zip = { version = "9.4.1", default-features = false, features = ["deflate"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[dev-dependencies]
+egui_kittest = { version = "0.37.0", features = ["wgpu", "snapshot"] }
+
+# `cargo deb` builds a .deb for Ubuntu/Kubuntu/Debian (installs to /usr/bin with a menu entry).
+[package.metadata.deb]
+name = "lumi"
+maintainer = "Lumi contributors"
+section = "education"
+depends = "libc6 (>= 2.35), libasound2 | libasound2t64"
+recommends = "xdg-desktop-portal, libnotify-bin, fonts-noto-color-emoji"
+extended-description = "Lumi turns your textbooks, notes and old quizzes into lessons, Duolingo-style quizzes and test prep, using free AI keys you provide (Gemini, Groq, Mistral, OpenRouter) or Claude."
+assets = [
+    ["target/release/lumi", "usr/bin/", "755"],
+    ["packaging/lumi.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/256x256/apps/lumi.png", "644"],
+    ["README.md", "usr/share/doc/lumi/README", "644"],
+]
