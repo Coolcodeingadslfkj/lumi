@@ -76,7 +76,11 @@ pub struct Dash {
     pub freezes: i64,
     pub gems: i64,
     pub hat: Option<String>,
+    pub accessory: Option<String>,
+    pub celebration: Option<String>,
     pub theme: Option<String>,
+    /// Unix time when Double XP ends (0 = off).
+    pub double_xp_until: i64,
     pub stage_key: String,
     pub stage: Option<Stage>,
     pub due: usize,
@@ -226,7 +230,10 @@ impl App {
             freezes: db.get_or("freezes", 0),
             gems: game::gems(db),
             hat: db.get::<Option<String>>("hat").flatten(),
+            accessory: db.get::<Option<String>>("accessory").flatten(),
+            celebration: db.get::<Option<String>>("celebration").flatten(),
             theme: db.get::<Option<String>>("theme").flatten(),
+            double_xp_until: db.get_or("double_xp_until", 0),
             stage_key: stage.key.to_string(),
             stage: Some(stage),
             due: game::due_concepts(db, None).len(),
@@ -316,7 +323,8 @@ impl App {
 
     pub fn confetti(&mut self, n: usize) {
         let r = self.ctx.content_rect();
-        self.fx.confetti(r, n);
+        let style = self.dash.celebration.as_deref().and_then(crate::shop::get);
+        self.fx.confetti(r, n, style);
     }
 
     fn poll(&mut self) {
@@ -373,7 +381,7 @@ impl App {
     }
 
     pub fn mascot(&self, ui: &mut Ui, size: f32, mood: Mood) {
-        widgets::mascot_widget(ui, size, mood, &self.dash.stage_key, self.dash.hat.as_deref());
+        widgets::mascot_widget(ui, size, mood, &self.dash.stage_key, self.dash.hat.as_deref(), self.dash.accessory.as_deref());
     }
 
     // ---------- frame ----------
@@ -520,6 +528,11 @@ impl App {
             widgets::chip(ui, &p, &format!("🔥 {}", d.streak), if d.today_xp > 0 { p.flame } else { p.faint })
                 .on_hover_text(if d.today_xp > 0 { "Streak extended today!" } else { "Study today to extend your streak" });
             widgets::chip(ui, &p, &format!("🧊 {}", d.freezes), p.ice).on_hover_text("Streak freezes protect your streak on a missed day");
+            let left = d.double_xp_until - chrono::Utc::now().timestamp();
+            if left > 0 {
+                widgets::chip(ui, &p, &format!("⚡2× XP · {}:{:02}", left / 60, left % 60), p.green).on_hover_text("Double XP is active: every answer earns twice the XP");
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+            }
         });
     }
 
@@ -594,19 +607,19 @@ impl App {
         let Some(r) = self.rewards.front() else { return };
         let p = self.pal;
         let mut close = false;
-        let (stage_key, hat) = (self.dash.stage_key.clone(), self.dash.hat.clone());
+        let (stage_key, hat, acc) = (self.dash.stage_key.clone(), self.dash.hat.clone(), self.dash.accessory.clone());
         let goal = self.dash.goal;
         modal_frame(ctx, &p, "reward", 440.0, |ui| {
             ui.vertical_centered(|ui| match r {
                 Reward::Goal => {
-                    widgets::mascot_widget(ui, 130.0, Mood::Celebrate, &stage_key, hat.as_deref());
+                    widgets::mascot_widget(ui, 130.0, Mood::Celebrate, &stage_key, hat.as_deref(), acc.as_deref());
                     ui.label(RichText::new("Daily goal reached! 🎯").font(bold(26.0)));
                     ui.label(RichText::new(format!("You hit {goal} XP today. Your future self says thanks. +10 💎")).color(p.muted));
                     ui.add_space(10.0);
                     close = widgets::button_sized(ui, "Keep going", p.primary, true, 15.0, 300.0).clicked();
                 }
                 Reward::LevelUp(l) => {
-                    widgets::mascot_widget(ui, 120.0, Mood::Celebrate, &stage_key, hat.as_deref());
+                    widgets::mascot_widget(ui, 120.0, Mood::Celebrate, &stage_key, hat.as_deref(), acc.as_deref());
                     ui.label(RichText::new("LEVEL UP!").font(bold(14.0)).color(p.muted));
                     ui.label(RichText::new(l.to_string()).font(bold(80.0)).color(p.gold));
                     ui.label(format!("You're now level {l}. Every level is proof you showed up."));
@@ -619,9 +632,9 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.add_space(40.0);
                         let prev = match s.key { "glow" => "spark", "lumen" => "glow", _ => "lumen" };
-                        widgets::mascot_widget(ui, 110.0, Mood::Idle, prev, hat.as_deref());
+                        widgets::mascot_widget(ui, 110.0, Mood::Idle, prev, hat.as_deref(), acc.as_deref());
                         ui.label(RichText::new("→").size(34.0));
-                        widgets::mascot_widget(ui, 150.0, Mood::Celebrate, s.key, hat.as_deref());
+                        widgets::mascot_widget(ui, 150.0, Mood::Celebrate, s.key, hat.as_deref(), acc.as_deref());
                     });
                     ui.label(RichText::new(format!("Lumi evolved into {}!", s.name)).font(bold(26.0)));
                     ui.label(RichText::new(match (s.next_name, s.next_level) {

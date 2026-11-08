@@ -1022,20 +1022,20 @@ fn results(app: &mut App, ui: &mut Ui) {
     let boss = run.req.boss.clone();
     let lost = boss.is_some() && run.boss_hp > 0;
     let exam = run.req.kind.as_deref() == Some("mock");
-    let (stage, hat) = (app.dash.stage_key.clone(), app.dash.hat.clone());
+    let (stage, hat, wear) = (app.dash.stage_key.clone(), app.dash.hat.clone(), app.dash.accessory.clone());
     ui.vertical_centered(|ui| {
         ui.add_space(20.0);
         if let Some((name, color, _)) = &boss {
             ui.horizontal(|ui| {
                 ui.add_space((ui.available_width() - 260.0) / 2.0);
-                widgets::mascot_widget(ui, 130.0, if lost { Mood::Sad } else { Mood::Celebrate }, &stage, hat.as_deref());
+                widgets::mascot_widget(ui, 130.0, if lost { Mood::Sad } else { Mood::Celebrate }, &stage, hat.as_deref(), wear.as_deref());
                 let (r, _) = ui.allocate_exact_size(vec2(110.0, 110.0), Sense::hover());
                 widgets::boss(ui, r, *color, if lost { BossMood::Idle } else { BossMood::Defeated });
             });
             ui.label(RichText::new(if lost { format!("{name} wins this round") } else { format!("Victory! {name} defeated ⚔️") }).font(bold(30.0)));
             ui.label(RichText::new(if lost { format!("It had {} HP left. Review the unit and come back stronger, you've got this.", run.boss_hp) } else { "Unit conquered! The boss drops a pile of gems. 💎".into() }).color(p.muted));
         } else {
-            widgets::mascot_widget(ui, 160.0, Mood::Celebrate, &stage, hat.as_deref());
+            widgets::mascot_widget(ui, 160.0, Mood::Celebrate, &stage, hat.as_deref(), wear.as_deref());
             let title = if exam { format!("Mock exam: {}%", out.mock_score.unwrap_or(acc as i64)) } else if out.perfect { "Flawless! 💎".into() } else if acc >= 80 { "Lesson complete! 🎉".into() } else { "Practice complete! 💪".into() };
             ui.label(RichText::new(title).font(bold(30.0)));
             ui.label(RichText::new(if out.perfect { "Not a single mistake. Incredible." } else if acc >= 80 { "Strong work. That's real understanding." } else { "Every mistake you fixed today is a mistake you won't make on the test." }).color(p.muted));

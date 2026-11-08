@@ -157,3 +157,27 @@ fn render_quiz_screens() {
     h.key_press(Key::Enter);
     shot(&mut h, "q_boss_results");
 }
+
+/// The whole shop in one tall image (target/screens/shop_full.png), for previewing new items.
+#[test]
+fn render_shop_catalog() {
+    let dir = std::env::temp_dir().join(format!("lumi-shop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    unsafe { std::env::set_var("LUMI_NO_AUTOSTART", "1") };
+    let db = Db::open_at(&dir).unwrap();
+    seed(&db);
+    db.set("accessory", &Some("bowtie"));
+    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/screens");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut app: Option<App> = None;
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1360.0, 4200.0)).wgpu().build_ui(|ui| {
+        let a = app.get_or_insert_with(|| App::with_ctx(ui.ctx().clone(), db.clone()));
+        a.frame(ui);
+    });
+    h.run_steps(2);
+    set_route(&mut h, Route::Shop);
+    h.run_steps(5);
+    if let Ok(img) = h.render() {
+        img.save(out.join("shop_full.png")).unwrap();
+    }
+}

@@ -1,8 +1,12 @@
 {
-  "_help": "Shop items. Add a new hat, theme or power-up by adding an entry here; see docs/ADDING_SHOP_ITEMS.md. Hat shapes use Lumi's 108x108 drawing grid (Lumi's head top is around y=28, center x=54).",
+  "_help": "Shop items. Add a new hat, accessory, celebration, theme or power-up by adding an entry here; see docs/ADDING_SHOP_ITEMS.md. Hat shapes use Lumi's 108x108 drawing grid (Lumi's head top is around y=28, center x=54).",
   "items": [
     { "id": "freeze", "kind": "powerup", "name": "Streak Freeze", "price": 30, "icon": "🧊",
       "desc": "Protects your streak for one missed day" },
+    { "id": "double_xp", "kind": "powerup", "name": "Double XP", "price": 40, "icon": "⚡",
+      "desc": "Every answer earns 2× XP for 15 minutes" },
+    { "id": "mystery", "kind": "powerup", "name": "Mystery Box", "price": 45, "icon": "🎁",
+      "desc": "A random hat, accessory, celebration or theme you don't own yet. Rare items can drop" },
 
     { "id": "flower", "kind": "hat", "name": "Flower", "price": 30, "icon": "🌸",
       "shapes": [
@@ -52,6 +56,141 @@
         { "circle": [54, 27, 3.5], "color": "#ff6b9a" },
         { "circle": [42, 29, 2.2], "color": "#6fd3ff" }, { "circle": [66, 29, 2.2], "color": "#6fd3ff" } ] },
 
+    { "id": "cat_ears", "kind": "hat", "name": "Cat Ears", "price": 35, "icon": "🐱",
+      "shapes": [
+        { "poly": [[28, 38], [30, 12], [50, 30]], "color": "#2a2440" },
+        { "poly": [[80, 38], [78, 12], [58, 30]], "color": "#2a2440" },
+        { "poly": [[32, 33], [33, 19], [44, 29]], "color": "#ff8fb5" },
+        { "poly": [[76, 33], [75, 19], [64, 29]], "color": "#ff8fb5" } ] },
+
+    { "id": "bunny_ears", "kind": "hat", "name": "Bunny Ears", "price": 35, "icon": "🐰", "hides_antenna": true,
+      "shapes": [
+        { "ellipse": [42, 12, 7, 18], "color": "#f4f0ff" }, { "ellipse": [66, 12, 7, 18], "color": "#f4f0ff" },
+        { "ellipse": [42, 13, 3.5, 13], "color": "#ffb3cc" }, { "ellipse": [66, 13, 3.5, 13], "color": "#ffb3cc" },
+        { "rect": [30, 27, 48, 6, 3], "color": "#f4f0ff" } ] },
+
+    { "id": "halo", "kind": "hat", "name": "Halo", "price": 45, "icon": "😇", "hides_antenna": true,
+      "shapes": [
+        { "ring": [54, 16, 21, 5.5], "width": 6, "color": "#fff1a8" },
+        { "ring": [54, 16, 21, 5.5], "width": 2.5, "color": "#ffd84d" } ] },
+
+    { "id": "chef", "kind": "hat", "name": "Chef Hat", "price": 55, "icon": "👨‍🍳", "hides_antenna": true,
+      "shapes": [
+        { "circle": [40, 15, 11], "color": "#ffffff" }, { "circle": [68, 15, 11], "color": "#ffffff" },
+        { "circle": [54, 10, 13], "color": "#ffffff" },
+        { "rect": [35, 14, 38, 18, 3], "color": "#ffffff" },
+        { "rect": [33, 28, 42, 8, 3], "color": "#e4def5" } ] },
+
+    { "id": "propeller", "kind": "hat", "name": "Propeller Cap", "price": 65, "icon": "🚁", "hides_antenna": true,
+      "shapes": [
+        { "dome": [54, 37, 27, 19], "color": "#3d8bff" },
+        { "poly": [[54, 18], [62, 19], [66, 37], [54, 37]], "color": "#ff6b9a" },
+        { "ellipse": [76, 36, 13, 3.5], "color": "#2a6ad6" },
+        { "line": [[54, 19], [54, 9]], "width": 3, "color": "#4a4a5a" },
+        { "ellipse": [44, 8, 10, 2.8], "color": "#ffd84d" }, { "ellipse": [64, 8, 10, 2.8], "color": "#22c58b" },
+        { "circle": [54, 8, 3], "color": "#4a4a5a" } ] },
+
+    { "id": "cowboy", "kind": "hat", "name": "Cowboy Hat", "price": 70, "icon": "🤠", "hides_antenna": true,
+      "shapes": [
+        { "ellipse": [54, 32, 40, 7], "color": "#8a5a2b" },
+        { "dome": [54, 31, 18, 21], "color": "#a86f38" },
+        { "rect": [36, 24, 36, 5, 2], "color": "#5a3a1a" },
+        { "star": [54, 26, 2.6], "color": "#ffd84d" } ] },
+
+    { "id": "pirate", "kind": "hat", "name": "Pirate Hat", "price": 75, "icon": "🏴‍☠️", "hides_antenna": true,
+      "shapes": [
+        { "poly": [[18, 34], [54, 8], [90, 34], [54, 40]], "color": "#1b1b24" },
+        { "line": [[22, 33], [86, 33]], "width": 2.5, "color": "#ffc542" },
+        { "circle": [54, 22, 5], "color": "#efe9ff" },
+        { "line": [[47, 28], [61, 33]], "width": 2.2, "color": "#efe9ff" },
+        { "line": [[61, 28], [47, 33]], "width": 2.2, "color": "#efe9ff" } ] },
+
+    { "id": "santa", "kind": "hat", "name": "Santa Hat", "price": 75, "icon": "🎅", "hides_antenna": true,
+      "shapes": [
+        { "poly": [[30, 36], [80, 36], [64, 4]], "color": "#e83a4a" },
+        { "rect": [26, 31, 58, 9, 4.5], "color": "#ffffff" },
+        { "circle": [64, 5, 6], "color": "#ffffff" } ] },
+
+    { "id": "viking", "kind": "hat", "name": "Viking Helmet", "price": 90, "icon": "🛡️", "hides_antenna": true,
+      "shapes": [
+        { "poly": [[28, 27], [12, 3], [22, 33]], "color": "#efe9ff" },
+        { "poly": [[80, 27], [96, 3], [86, 33]], "color": "#efe9ff" },
+        { "dome": [54, 38, 30, 26], "color": "#9aa3b5" },
+        { "rect": [52, 12, 4, 26, 2], "color": "#c9a227" },
+        { "rect": [23, 32, 62, 8, 4], "color": "#c9a227" },
+        { "circle": [32, 36, 1.8], "color": "#7a6214" }, { "circle": [54, 36, 1.8], "color": "#7a6214" }, { "circle": [76, 36, 1.8], "color": "#7a6214" } ] },
+
+    { "id": "tophat", "kind": "hat", "name": "Top Hat", "price": 100, "icon": "🎩", "hides_antenna": true,
+      "shapes": [
+        { "rect": [36, 0, 36, 32, 3], "color": "#24243a" },
+        { "rect": [36, 21, 36, 6, 0], "color": "#ff6b9a" },
+        { "rect": [24, 29, 60, 7, 3.5], "color": "#1b1b2c" } ] },
+
+    { "id": "unicorn", "kind": "hat", "name": "Unicorn Horn", "price": 150, "icon": "🦄", "hides_antenna": true,
+      "shapes": [
+        { "poly": [[47, 32], [54, -4], [61, 32]], "color": "#ffe3f6" },
+        { "line": [[48.8, 25], [59.2, 21]], "width": 2.2, "color": "#ff9ee6" },
+        { "line": [[50.6, 16], [57.6, 13]], "width": 2.2, "color": "#9ee0ff" },
+        { "line": [[52.2, 7], [55.8, 5.5]], "width": 2, "color": "#ffd84d" },
+        { "star": [36, 30, 3.5], "color": "#ffd84d" }, { "star": [73, 26, 2.8], "color": "#9ee0ff" } ] },
+
+    { "id": "round_glasses", "kind": "accessory", "name": "Study Glasses", "price": 30, "icon": "👓",
+      "shapes": [
+        { "ring": [42, 52, 10, 10], "width": 3, "color": "#1b1440" },
+        { "ring": [66, 52, 10, 10], "width": 3, "color": "#1b1440" },
+        { "line": [[52, 51], [56, 51]], "width": 3, "color": "#1b1440" } ] },
+
+    { "id": "bowtie", "kind": "accessory", "name": "Bow Tie", "price": 35, "icon": "🎀",
+      "shapes": [
+        { "poly": [[54, 86], [41, 79], [41, 93]], "color": "#ff3d7f" },
+        { "poly": [[54, 86], [67, 79], [67, 93]], "color": "#ff3d7f" },
+        { "circle": [54, 86, 3.8], "color": "#c92a62" } ] },
+
+    { "id": "mustache", "kind": "accessory", "name": "Fancy Mustache", "price": 40, "icon": "🥸",
+      "shapes": [
+        { "ellipse": [47, 64, 8, 3.6], "color": "#3a2a1a" },
+        { "ellipse": [61, 64, 8, 3.6], "color": "#3a2a1a" },
+        { "circle": [39.5, 62, 2.4], "color": "#3a2a1a" }, { "circle": [68.5, 62, 2.4], "color": "#3a2a1a" } ] },
+
+    { "id": "scarf", "kind": "accessory", "name": "Cozy Scarf", "price": 45, "icon": "🧣",
+      "shapes": [
+        { "rect": [30, 78, 48, 9, 4.5], "color": "#ff6b4a" },
+        { "rect": [60, 82, 10, 17, 3], "color": "#e8553a" },
+        { "line": [[61, 95], [69, 95]], "width": 2, "color": "#ffd0c2" },
+        { "line": [[38, 79], [38, 86]], "width": 2, "color": "#ffd0c2" }, { "line": [[48, 79], [48, 86]], "width": 2, "color": "#ffd0c2" } ] },
+
+    { "id": "sunglasses", "kind": "accessory", "name": "Cool Shades", "price": 60, "icon": "🕶️",
+      "shapes": [
+        { "rect": [28, 41, 25, 21, 7], "color": "#111122" },
+        { "rect": [55, 41, 25, 21, 7], "color": "#111122" },
+        { "line": [[52, 46], [56, 46]], "width": 3, "color": "#111122" },
+        { "line": [[32, 46], [39, 46]], "width": 2.2, "color": "#6d6d9a" }, { "line": [[59, 46], [66, 46]], "width": 2.2, "color": "#6d6d9a" } ] },
+
+    { "id": "heart_glasses", "kind": "accessory", "name": "Heart Glasses", "price": 70, "icon": "😍",
+      "shapes": [
+        { "circle": [38, 49, 5.2], "color": "#ff3d7f" }, { "circle": [46, 49, 5.2], "color": "#ff3d7f" },
+        { "poly": [[33, 51], [51, 51], [42, 61]], "color": "#ff3d7f" },
+        { "circle": [62, 49, 5.2], "color": "#ff3d7f" }, { "circle": [70, 49, 5.2], "color": "#ff3d7f" },
+        { "poly": [[57, 51], [75, 51], [66, 61]], "color": "#ff3d7f" },
+        { "line": [[51, 49], [57, 49]], "width": 2.5, "color": "#c92a62" } ] },
+
+    { "id": "monocle", "kind": "accessory", "name": "Monocle", "price": 80, "icon": "🧐",
+      "shapes": [
+        { "ring": [66, 52, 10.5, 10.5], "width": 2.8, "color": "#ffc542" },
+        { "line": [[73, 60], [80, 84]], "width": 1.5, "color": "#ffc542" } ] },
+
+    { "id": "hearts", "kind": "celebration", "name": "Hearts", "price": 40, "icon": "💖",
+      "particle": "heart", "palette": ["#ff3d7f", "#ff6b9a", "#ff9ec0", "#ff4d6d", "#ffd1dc"] },
+    { "id": "starfall", "kind": "celebration", "name": "Starfall", "price": 50, "icon": "🌟",
+      "particle": "star", "palette": ["#ffd84d", "#fff1a8", "#ffc542", "#ffffff", "#9ee0ff"] },
+    { "id": "snow", "kind": "celebration", "name": "Snow Day", "price": 50, "icon": "❄️",
+      "particle": "circle", "palette": ["#ffffff", "#e3f4ff", "#b8e2ff", "#d6d0ff"] },
+    { "id": "rainbow", "kind": "celebration", "name": "Rainbow", "price": 60, "icon": "🌈",
+      "particle": "ribbon", "palette": ["#ff4d4d", "#ff9f40", "#ffd84d", "#4cd97b", "#3fa9ff", "#9b6bff"] },
+    { "id": "gold_rush", "kind": "celebration", "name": "Gold Rush", "price": 100, "icon": "🪙",
+      "particle": "circle", "palette": ["#ffc542", "#e6a817", "#ffe08a", "#d4a017"] },
+
+
     { "id": "ocean", "kind": "theme", "name": "Ocean", "price": 60, "icon": "🌊",
       "colors": { "bg": "#06141f", "surface": "#0c2131", "surface2": "#122f45", "surface3": "#1a3d59", "line": "#1f4866",
                   "primary": "#2fa8ff", "primary2": "#7cc8ff", "muted": "#9cc0d8", "faint": "#5f8aa6", "accent": "#22c5c5" } },
@@ -63,6 +202,21 @@
                   "primary": "#2bbf7e", "primary2": "#7fe0b2", "muted": "#a3cdb5", "faint": "#66947a", "accent": "#c5e86c" } },
     { "id": "candy", "kind": "theme", "name": "Candy", "price": 90, "icon": "🍬",
       "colors": { "bg": "#180d22", "surface": "#271635", "surface2": "#351e47", "surface3": "#432659", "line": "#53306c",
-                  "primary": "#ff5fcf", "primary2": "#ff9ee6", "muted": "#d6aee0", "faint": "#9a72a8", "accent": "#6fd3ff" } }
+                  "primary": "#ff5fcf", "primary2": "#ff9ee6", "muted": "#d6aee0", "faint": "#9a72a8", "accent": "#6fd3ff" } },
+    { "id": "arctic", "kind": "theme", "name": "Arctic", "price": 60, "icon": "🧊",
+      "colors": { "bg": "#0a1218", "surface": "#121d26", "surface2": "#1a2a36", "surface3": "#233847", "line": "#2c4556",
+                  "primary": "#2b9fe0", "primary2": "#8fdcff", "muted": "#b4cfdc", "faint": "#6f8fa0", "accent": "#a6f0d8" } },
+    { "id": "grape", "kind": "theme", "name": "Grape Soda", "price": 60, "icon": "🍇",
+      "colors": { "bg": "#110a1c", "surface": "#1c1230", "surface2": "#271a42", "surface3": "#322254", "line": "#3e2a66",
+                  "primary": "#a66bff", "primary2": "#c9a6ff", "muted": "#c8b6e6", "faint": "#8574a6", "accent": "#7ef0c4" } },
+    { "id": "coffee", "kind": "theme", "name": "Coffee Shop", "price": 70, "icon": "☕",
+      "colors": { "bg": "#14100c", "surface": "#211a14", "surface2": "#2e241b", "surface3": "#3b2e23", "line": "#4a3a2c",
+                  "primary": "#c27a3e", "primary2": "#e8b48a", "muted": "#d6c2ad", "faint": "#96806a", "accent": "#9be3c3" } },
+    { "id": "cherry", "kind": "theme", "name": "Cherry Blossom", "price": 80, "icon": "🌸",
+      "colors": { "bg": "#170a0e", "surface": "#261118", "surface2": "#361822", "surface3": "#46202d", "line": "#582838",
+                  "primary": "#ff4d6d", "primary2": "#ff8fa3", "muted": "#e0aab5", "faint": "#9c6a76", "accent": "#ffd1dc" } },
+    { "id": "royal", "kind": "theme", "name": "Royal Gold", "price": 150, "icon": "🏆",
+      "colors": { "bg": "#120f06", "surface": "#1f1a0c", "surface2": "#2c2512", "surface3": "#3a3018", "line": "#4a3d1f",
+                  "primary": "#e6b422", "primary2": "#f5d36b", "muted": "#d8c99a", "faint": "#9a8c62", "accent": "#c084fc" } }
   ]
 }

@@ -28,7 +28,8 @@ Claude key.
 - **Built on learning research:** retrieval practice, spaced review (Leitner boxes), successive
   relearning and a mistake notebook.
 - **Motivation:** XP and levels, streaks with freezes, daily quests and a chest, achievements, Lumi
-  evolving as you level up, and a gem shop with hats and themes.
+  evolving as you level up, and a gem shop with hats, accessories, confetti styles, themes, Double XP and
+  mystery boxes.
 - **Desktop reminders** (optional) so you keep your streak.
 
 ## Install
@@ -136,7 +137,7 @@ from the app, so courses, gems and purchases carry over, and Lumi upgrades its d
 
 ## Contributing
 
-- **Add hats, themes or power-ups to the shop:** see [docs/ADDING_SHOP_ITEMS.md](docs/ADDING_SHOP_ITEMS.md).
+- **Add hats, accessories, celebrations or themes to the shop:** see [docs/ADDING_SHOP_ITEMS.md](docs/ADDING_SHOP_ITEMS.md).
   It's a single JSON file, with no Rust needed.
 - **Run the tests:** `cargo test --release`. The `screens` test renders every screen to
   `target/screens/` so you can review layout changes.

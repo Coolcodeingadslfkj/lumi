@@ -1,12 +1,12 @@
 # Adding shop items
 
 Everything in Lumi's gem shop comes from one file: [`assets/shop.json`](../assets/shop.json).
-To add a hat, theme or power-up, add an entry there and rebuild. You don't need to change any Rust code
-for hats or themes.
+To add a hat, accessory, celebration or theme, add an entry there and rebuild. You don't need to change
+any Rust code for those.
 
 ```sh
 cargo test --release --lib shop       # checks the catalog (ids, colors, shapes)
-cargo test --release --test screens   # renders every screen, including the shop, to target/screens/
+cargo test --release --test screens   # renders every screen to target/screens/; the whole shop is shop_full.png
 cargo run --release                   # try it for real
 ```
 
@@ -14,24 +14,30 @@ cargo run --release                   # try it for real
 
 - **Never change or remove an existing `id`.** Players' purchases are saved by id. Rename the
   `name` freely, but the id must stay the same forever.
-- Ids are lowercase, unique and short (`"pirate"`, `"space_theme"`).
+- Ids are lowercase, unique and short (`"space_helmet"`, `"mint"`).
 - `price` is in gems and must be positive. For scale, a player earns roughly 30–60 gems a day: the daily
   chest gives 15–40, hitting the daily goal 10, a level-up 20, and a boss's first defeat 25.
 - `icon` is one emoji, shown on the shop card.
 
-## Hats
+## Hats and accessories
 
-A hat is a list of shapes drawn on top of Lumi. Lumi lives on a **108 × 108 grid**: x runs left to right,
+Lumi wears one hat and one accessory at the same time, so they can be mixed. Accessories (glasses, bow
+ties, scarves) are drawn on Lumi's face and body, and hats are drawn on top of everything. Both work the same way:
+`"kind": "hat"` or `"kind": "accessory"`, plus a list of shapes.
+
+Useful spots: the eyes are at (42, 52) and (66, 52), the mouth is around (54, 68), the bottom of the body is around y = 90, and the feet are at y = 94.
+
+Lumi lives on a **108 × 108 grid**: x runs left to right,
 y runs top to bottom, the body's center is around (54, 60), and the top of the head is around y = 28.
 Shapes are drawn in order, so later shapes go on top.
 
 ```json
-{ "id": "pirate", "kind": "hat", "name": "Pirate Hat", "price": 90, "icon": "🏴‍☠️", "hides_antenna": true,
-  "desc": "Arr!",
+{ "id": "space_helmet", "kind": "hat", "name": "Space Helmet", "price": 90, "icon": "🧑‍🚀", "hides_antenna": true,
+  "desc": "To the moon",
   "shapes": [
-    { "dome": [54, 34, 34, 22], "color": "#1b1b24" },
-    { "rect": [18, 30, 72, 7, 3], "color": "#2b2b38" },
-    { "circle": [54, 22, 5], "color": "#efe9ff" }
+    { "ring": [54, 58, 40, 38], "width": 4, "color": "#d8e4ff" },
+    { "rect": [36, 14, 36, 6, 3], "color": "#d8e4ff" },
+    { "circle": [54, 12, 4], "color": "#ff6b4a" }
   ] }
 ```
 
@@ -47,9 +53,23 @@ Set `"hides_antenna": true` for hats that cover the top of the head.
 | `arc`     | `[cx, cy, rx, ry]` + `width`         | top half of an ellipse outline (headbands) |
 | `dome`    | `[cx, cy, rx, ry]`                   | filled top half of an ellipse (beanies, helmets) |
 | `star`    | `[x, y, radius]`                     | filled five-point star |
+| `ring`    | `[cx, cy, rx, ry]` + `width`         | ellipse outline (glasses, halos, monocles) |
 
 Each shape has exactly one of the fields above, plus `"color": "#rrggbb"`. `width` is optional and
 defaults to 2. Coordinates can go slightly outside the grid (for example, a tall wizard hat uses y = −8).
+Polygons must be convex (no dents). Build a dented shape out of several convex pieces, the way the
+crown and heart glasses do. The catalog test catches dented polygons.
+
+## Celebrations
+
+A celebration changes the confetti that bursts out when you finish a session, level up or hit your daily goal:
+
+```json
+{ "id": "leaves", "kind": "celebration", "name": "Autumn Leaves", "price": 50, "icon": "🍂",
+  "particle": "ribbon", "palette": ["#e8743b", "#d9a43a", "#b5532c", "#f2c14e"] }
+```
+
+`particle` is the shape of each piece: `ribbon`, `circle`, `star` or `heart`. `palette` is a list of colors to pick from at random.
 
 ## Themes
 
@@ -76,8 +96,16 @@ light, because the rest of the palette (green, red and yellow for answers) is tu
 
 ## Power-ups
 
-Power-ups can be bought more than once. The only one so far is `freeze` (streak freeze). A new power-up
-needs a few lines of Rust to say what it does: see `buy` in [`src/game.rs`](../src/game.rs).
+Power-ups can be bought more than once. You can change their `name`, `price`, `icon` and `desc` in the JSON.
+
+| Id | What it does |
+|----|--------------|
+| `freeze` | protects the streak for one missed day (up to 2) |
+| `double_xp` | 2× XP for 15 minutes (`DOUBLE_XP_MINUTES` in `src/game.rs`); buying again adds time |
+| `mystery` | a random hat, accessory, celebration or theme the player doesn't own yet; pricier items are rarer |
+
+A brand-new power-up needs a few lines of Rust to say what it does. Add its id to `POWERUPS` in
+[`src/shop.rs`](../src/shop.rs) and handle it in `buy` in [`src/game.rs`](../src/game.rs).
 
 ## Shipping it
 

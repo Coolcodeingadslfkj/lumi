@@ -57,6 +57,7 @@ pub const ACHIEVEMENTS: &[Achievement] = &[
     ach!("fixer_50", "Mistake Slayer", "Fix 50 mistakes from your notebook", "🗡️"),
     ach!("quest_7", "Questing", "Open 7 daily chests", "🎁"),
     ach!("shopper", "Fresh Look", "Buy something in the shop", "🛍️"),
+    ach!("collector", "Collector", "Own 10 items from the shop", "🧺"),
     ach!("evolved", "Glow Up", "Help Lumi evolve", "🌟"),
 ];
 
@@ -78,6 +79,8 @@ pub struct Events {
     pub chest_gems: i64,
     pub chest_freeze: bool,
     pub mistake_fixed: bool,
+    /// Shop item id won from a mystery box.
+    pub unboxed: Option<String>,
 }
 
 impl Events {
@@ -93,6 +96,7 @@ impl Events {
         self.chest_gems += o.chest_gems;
         self.chest_freeze |= o.chest_freeze;
         self.mistake_fixed |= o.mistake_fixed;
+        self.unboxed = o.unboxed.or(self.unboxed.take());
     }
 }
 
@@ -170,6 +174,7 @@ pub fn counter(db: &Db, key: &str) -> i64 {
 
 /// Add XP for today; returns level-up / goal / achievement events.
 pub fn award(db: &Db, xp: i64, answers: i64, correct: i64) -> Events {
+    let xp = if double_xp_active(db) { xp * 2 } else { xp };
     let mut ev = Events { xp, ..Default::default() };
     let before_total = total_xp(db);
     let before_today = today_xp(db);
@@ -433,6 +438,12 @@ pub fn owned(db: &Db) -> Vec<String> {
 }
 
 /// Buy an item; Err(reason) when not possible.
+pub const DOUBLE_XP_MINUTES: i64 = 15;
+
+pub fn double_xp_active(db: &Db) -> bool {
+    db.get_or::<i64>("double_xp_until", 0) > chrono::Utc::now().timestamp()
+}
+
 pub fn buy(db: &Db, id: &str) -> Result<Events, String> {
     let item = crate::shop::get(id).ok_or("Unknown item.")?;
     let mut own = owned(db);
@@ -443,19 +454,52 @@ pub fn buy(db: &Db, id: &str) -> Result<Events, String> {
     if id == "freeze" && freezes >= MAX_FREEZES {
         return Err(format!("You can hold at most {MAX_FREEZES} streak freezes."));
     }
+    // a mystery box only makes sense while there's something left to win
+    let prizes: Vec<&crate::shop::Item> = crate::shop::items().iter().filter(|i| i.kind != "powerup" && !own.contains(&i.id)).collect();
+    if id == "mystery" && prizes.is_empty() {
+        return Err("You already own everything in the shop. Legendary!".into());
+    }
     if gems(db) < item.price {
         return Err("Not enough gems yet. Complete daily quests and beat bosses to earn more!".into());
     }
     db.set("gems", &(gems(db) - item.price));
-    if id == "freeze" {
-        db.set("freezes", &(freezes + 1));
-    } else {
-        own.push(id.into());
-        db.set("owned", &own);
-        db.set(&item.kind, &id); // equip right away
-    }
     let mut ev = Events::default();
+    match id {
+        "freeze" => db.set("freezes", &(freezes + 1)),
+        "double_xp" => {
+            // buying again while active adds time
+            let now = chrono::Utc::now().timestamp();
+            let until = db.get_or::<i64>("double_xp_until", 0).max(now) + DOUBLE_XP_MINUTES * 60;
+            db.set("double_xp_until", &until);
+        }
+        "mystery" => {
+            use rand::RngExt;
+            // pricier items are rarer
+            let weights: Vec<f64> = prizes.iter().map(|p| 1.0 / (p.price as f64).sqrt()).collect();
+            let mut roll = rand::rng().random_range(0.0..weights.iter().sum::<f64>());
+            let mut prize = prizes[prizes.len() - 1];
+            for (p, w) in prizes.iter().zip(&weights) {
+                if roll < *w {
+                    prize = p;
+                    break;
+                }
+                roll -= w;
+            }
+            own.push(prize.id.clone());
+            db.set("owned", &own);
+            db.set(&prize.kind, &prize.id);
+            ev.unboxed = Some(prize.id.clone());
+        }
+        _ => {
+            own.push(id.into());
+            db.set("owned", &own);
+            db.set(&item.kind, &id); // equip right away
+        }
+    }
     unlock(db, "shopper", &mut ev);
+    if own.len() >= 10 {
+        unlock(db, "collector", &mut ev);
+    }
     Ok(ev)
 }
 
@@ -500,5 +544,45 @@ mod tests {
         assert_eq!(level_for_xp(1000).0, 5);
         assert_eq!(stage_for_level(5).key, "glow");
         assert_eq!(mastery_level(59.9), 2);
+    }
+
+    fn temp_db(name: &str) -> crate::db::Shared {
+        let dir = std::env::temp_dir().join(format!("lumi-game-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        Db::open_at(&dir).unwrap()
+    }
+
+    #[test]
+    fn double_xp_doubles_awards() {
+        let db = temp_db("dxp");
+        db.set("gems", &100);
+        assert_eq!(award(&db, 10, 1, 1).xp, 10);
+        buy(&db, "double_xp").unwrap();
+        assert_eq!(gems(&db), 100 - crate::shop::get("double_xp").unwrap().price);
+        assert_eq!(award(&db, 10, 1, 1).xp, 20);
+        // buying again stacks time instead of resetting it
+        let first: i64 = db.get_or("double_xp_until", 0);
+        buy(&db, "double_xp").unwrap();
+        assert_eq!(db.get_or::<i64>("double_xp_until", 0), first + DOUBLE_XP_MINUTES * 60);
+    }
+
+    #[test]
+    fn mystery_box_gives_new_items_until_none_left() {
+        let db = temp_db("mystery");
+        let cosmetics: Vec<_> = crate::shop::items().iter().filter(|i| i.kind != "powerup").collect();
+        db.set("gems", &100_000);
+        for _ in 0..cosmetics.len() {
+            let ev = buy(&db, "mystery").unwrap();
+            let won = crate::shop::get(ev.unboxed.as_deref().unwrap()).unwrap();
+            assert_eq!(db.get::<String>(&won.kind).as_deref(), Some(won.id.as_str()), "the prize is equipped");
+        }
+        let mut own = owned(&db);
+        own.sort();
+        own.dedup();
+        assert_eq!(own.len(), cosmetics.len(), "never a duplicate");
+        let before = gems(&db);
+        assert!(buy(&db, "mystery").is_err());
+        assert_eq!(gems(&db), before, "no charge when there's nothing left to win");
+        assert!(db.int("SELECT COUNT(*) FROM achievements WHERE key='collector'", &[]) == 1);
     }
 }

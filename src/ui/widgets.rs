@@ -23,7 +23,9 @@ pub fn button(ui: &mut Ui, text: &str, color: Color32, enabled: bool) -> Respons
 }
 
 pub fn button_sized(ui: &mut Ui, text: &str, color: Color32, enabled: bool, size: f32, min_w: f32) -> Response {
-    let text_color = if !enabled { Color32::from_gray(120) } else if color.r() > 200 && color.g() > 160 && color.b() < 120 { Color32::from_rgb(58, 42, 0) } else { Color32::WHITE };
+    // dark text on bright buttons (gold, light theme colors), white otherwise
+    let luma = 0.299 * color.r() as f32 + 0.587 * color.g() as f32 + 0.114 * color.b() as f32;
+    let text_color = if !enabled { Color32::from_gray(120) } else if luma > 170.0 { darken(color, 0.25) } else { Color32::WHITE };
     let galley = ui.painter().layout_no_wrap(text.to_uppercase(), bold(size), text_color);
     let pad = vec2(if size < 14.0 { 14.0 } else { 22.0 }, if size < 14.0 { 8.0 } else { 12.0 });
     let size_v = vec2((galley.size().x + pad.x * 2.0).max(min_w), galley.size().y + pad.y * 2.0 + 4.0);
@@ -127,7 +129,8 @@ fn ellipse_pts(c: Pos2, rx: f32, ry: f32, rot: f32, n: usize) -> Vec<Pos2> {
 }
 
 /// Draw Lumi into `rect`. Stage: spark | glow | lumen | sage. Hat: shop item id.
-pub fn mascot(ui: &Ui, rect: Rect, mood: Mood, stage: &str, hat: Option<&str>, t: f32) {
+/// Lumi the mascot. `hat` and `acc` are shop item ids (see assets/shop.json).
+pub fn mascot(ui: &Ui, rect: Rect, mood: Mood, stage: &str, hat: Option<&str>, acc: Option<&str>, t: f32) {
     let k = rect.width().min(rect.height()) / 108.0;
     let bob = match mood {
         Mood::Happy | Mood::Celebrate => -(t * 9.0).sin().abs() * 8.0,
@@ -211,8 +214,9 @@ pub fn mascot(ui: &Ui, rect: Rect, mood: Mood, stage: &str, hat: Option<&str>, t
     }
     pt.add(Shape::ellipse_filled(p(42.0, 94.0), vec2(8.0, 4.0) * k, deep));
     pt.add(Shape::ellipse_filled(p(66.0, 94.0), vec2(8.0, 4.0) * k, deep));
-    if let Some(h) = hat {
-        draw_hat(pt, h, &p, k);
+    // accessories sit on the face/body, hats on top of everything
+    for id in [acc, hat].into_iter().flatten() {
+        draw_item(pt, id, &p, k);
     }
 }
 
@@ -228,9 +232,9 @@ fn star(pt: &egui::Painter, c: Pos2, r: f32, color: Color32) {
     }
 }
 
-/// Draw a shop hat from its shapes in assets/shop.json.
-fn draw_hat(pt: &egui::Painter, hat: &str, p: &dyn Fn(f32, f32) -> Pos2, k: f32) {
-    let Some(item) = crate::shop::get(hat) else { return };
+/// Draw a shop hat or accessory from its shapes in assets/shop.json.
+fn draw_item(pt: &egui::Painter, id: &str, p: &dyn Fn(f32, f32) -> Pos2, k: f32) {
+    let Some(item) = crate::shop::get(id) else { return };
     for s in &item.shapes {
         let c = hex(&s.color);
         if let Some(pts) = &s.poly {
@@ -251,14 +255,16 @@ fn draw_hat(pt: &egui::Painter, hat: &str, p: &dyn Fn(f32, f32) -> Pos2, k: f32)
             pt.add(Shape::convex_polygon(pts, c, Stroke::NONE));
         } else if let Some([x, y, r]) = s.star {
             star(pt, p(x, y), r * k, c);
+        } else if let Some([cx, cy, rx, ry]) = s.ring {
+            pt.add(Shape::closed_line(ellipse_pts(p(cx, cy), rx * k, ry * k, 0.0, 32), Stroke::new(s.width * k, c)));
         }
     }
 }
 
-pub fn mascot_widget(ui: &mut Ui, size: f32, mood: Mood, stage: &str, hat: Option<&str>) -> Response {
+pub fn mascot_widget(ui: &mut Ui, size: f32, mood: Mood, stage: &str, hat: Option<&str>, acc: Option<&str>) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let t = ui.input(|i| i.time) as f32;
-    mascot(ui, rect, mood, stage, hat, t);
+    mascot(ui, rect, mood, stage, hat, acc, t);
     ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
     resp
 }
@@ -326,6 +332,73 @@ pub struct Particle {
     spin: f32,
     size: f32,
     color: Color32,
+    shape: u8,
+}
+
+impl Particle {
+    const RIBBON: u8 = 0;
+    const CIRCLE: u8 = 1;
+    const STAR: u8 = 2;
+    const HEART: u8 = 3;
+
+    fn draw(&self, pt: &egui::Painter) {
+        let (s, c) = self.rot.sin_cos();
+        match self.shape {
+            Self::CIRCLE => {
+                pt.circle_filled(self.pos, self.size / 2.0, self.color);
+            }
+            Self::STAR => star(pt, self.pos, self.size / 1.6, self.color),
+            Self::HEART => {
+                // two lobes plus a point, tilted with the spin
+                let rot = |v: Vec2| vec2(v.x * c - v.y * s, v.x * s + v.y * c) * (self.size / 10.0);
+                let r = self.size * 0.28;
+                pt.circle_filled(self.pos + rot(vec2(-2.4, -1.5)), r, self.color);
+                pt.circle_filled(self.pos + rot(vec2(2.4, -1.5)), r, self.color);
+                pt.add(Shape::convex_polygon(vec![self.pos + rot(vec2(-5.1, -0.4)), self.pos + rot(vec2(5.1, -0.4)), self.pos + rot(vec2(0.0, 5.5))], self.color, Stroke::NONE));
+            }
+            _ => {
+                let hw = vec2(c, s) * self.size / 2.0;
+                let hh = vec2(-s, c) * self.size / 4.0;
+                pt.add(Shape::convex_polygon(vec![self.pos - hw - hh, self.pos + hw - hh, self.pos + hw + hh, self.pos - hw + hh], self.color, Stroke::NONE));
+            }
+        }
+    }
+}
+
+fn particle_kind(name: Option<&str>) -> u8 {
+    match name {
+        Some("circle") => Particle::CIRCLE,
+        Some("star") => Particle::STAR,
+        Some("heart") => Particle::HEART,
+        _ => Particle::RIBBON,
+    }
+}
+
+/// A still sample of a confetti style, for the shop card.
+pub fn confetti_preview(ui: &mut Ui, size: Vec2, style: Option<&crate::shop::Item>) {
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let classic = ["#7c5cff", "#ff6b9a", "#22c58b", "#ffc542", "#6fd3ff", "#ff8a3d"];
+    let colors: Vec<&str> = match style {
+        Some(s) if !s.palette.is_empty() => s.palette.iter().map(|c| c.as_str()).collect(),
+        _ => classic.to_vec(),
+    };
+    let shape = particle_kind(style.and_then(|s| s.particle.as_deref()));
+    let t = ui.input(|i| i.time) as f32;
+    // fixed layout so the card doesn't flicker; a gentle sway keeps it alive
+    let spots = [(0.12, 0.25), (0.3, 0.7), (0.45, 0.2), (0.62, 0.55), (0.8, 0.3), (0.9, 0.78), (0.2, 0.5), (0.55, 0.85), (0.72, 0.12), (0.38, 0.45)];
+    for (i, (x, y)) in spots.iter().enumerate() {
+        let sway = (t * 1.5 + i as f32).sin() * 3.0;
+        Particle {
+            pos: rect.min + vec2(x * rect.width() + sway, y * rect.height()),
+            vel: Vec2::ZERO,
+            rot: i as f32 * 0.9 + t * 0.6,
+            spin: 0.0,
+            size: if shape == Particle::RIBBON { 13.0 } else { 15.0 },
+            color: hex(colors[i % colors.len()]),
+            shape,
+        }
+        .draw(ui.painter());
+    }
 }
 
 #[derive(Default)]
@@ -335,18 +408,25 @@ pub struct Fx {
 }
 
 impl Fx {
-    pub fn confetti(&mut self, screen: Rect, n: usize) {
+    /// Burst of confetti; `style` is an equipped "celebration" shop item (None = classic).
+    pub fn confetti(&mut self, screen: Rect, n: usize, style: Option<&crate::shop::Item>) {
         use rand::RngExt;
         let mut r = rand::rng();
-        let colors = ["#7c5cff", "#ff6b9a", "#22c58b", "#ffc542", "#6fd3ff", "#ff8a3d"];
+        let classic = ["#7c5cff", "#ff6b9a", "#22c58b", "#ffc542", "#6fd3ff", "#ff8a3d"];
+        let colors: Vec<&str> = match style {
+            Some(s) if !s.palette.is_empty() => s.palette.iter().map(|c| c.as_str()).collect(),
+            _ => classic.to_vec(),
+        };
+        let shape = particle_kind(style.and_then(|s| s.particle.as_deref()));
         for _ in 0..n {
             self.particles.push(Particle {
                 pos: pos2(screen.center().x + r.random_range(-100.0..100.0), screen.top() + screen.height() * 0.35),
                 vel: vec2(r.random_range(-8.0..8.0), -r.random_range(4.0..17.0)),
                 rot: r.random_range(0.0..6.0),
                 spin: r.random_range(-0.3..0.3),
-                size: r.random_range(5.0..12.0),
+                size: r.random_range(5.0..12.0) * if shape == Particle::RIBBON { 1.0 } else { 1.25 },
                 color: hex(colors[r.random_range(0..colors.len())]),
+                shape,
             });
         }
     }
@@ -367,10 +447,7 @@ impl Fx {
             p.vel.x *= 0.99;
             p.pos += p.vel;
             p.rot += p.spin;
-            let (s, c) = p.rot.sin_cos();
-            let hw = vec2(c, s) * p.size / 2.0;
-            let hh = vec2(-s, c) * p.size / 4.0;
-            painter.add(Shape::convex_polygon(vec![p.pos - hw - hh, p.pos + hw - hh, p.pos + hw + hh, p.pos - hw + hh], p.color, Stroke::NONE));
+            p.draw(&painter);
         }
         self.particles.retain(|p| p.pos.y < screen.bottom() + 40.0);
         self.floats.retain(|(text, at, t0, color)| {

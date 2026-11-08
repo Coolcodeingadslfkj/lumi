@@ -169,36 +169,63 @@ pub fn shop(app: &mut App, ui: &mut Ui) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| widgets::chip(ui, &p, &format!("💎 {gems}"), p.ice));
     });
     ui.add_space(14.0);
+    let mut action: Option<(&str, String)> = None;
     card_glow(&p).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             app.mascot(ui, 140.0, Mood::Happy);
             ui.vertical(|ui| {
                 ui.label(RichText::new("Dress up Lumi").font(bold(22.0)));
-                ui.label(RichText::new("Hats show up everywhere Lumi does: lessons, quizzes, celebrations.").color(p.muted));
+                ui.label(RichText::new("Mix a hat with an accessory. Lumi wears them everywhere: lessons, quizzes, celebrations.").color(p.muted));
+                ui.add_space(8.0);
+                let lucky = shop::get("mystery").map(|m| m.price).unwrap_or(0);
+                if widgets::button_sized(ui, &format!("🎁 Mystery box · 💎 {lucky}"), p.pink, gems >= lucky, 13.0, 230.0).on_hover_text("Win a random hat, accessory, celebration or theme you don't own yet").clicked() {
+                    action = Some(("buy", "mystery".into()));
+                }
             });
         });
     });
-    let mut action: Option<(&str, String)> = None;
-    for (kind, title) in [("hat", "🎩 Hats"), ("theme", "🎨 Themes"), ("powerup", "⚡ Power-ups")] {
+    let sections = [
+        ("hat", "🎩 Hats", "No hat"),
+        ("accessory", "🕶️ Accessories", "None"),
+        ("celebration", "🎉 Celebrations", "Classic confetti"),
+        ("theme", "🎨 Themes", "Midnight"),
+        ("powerup", "⚡ Power-ups", ""),
+    ];
+    for (kind, title, none_label) in sections {
         super::section(ui, &p, title);
+        if kind == "celebration" {
+            ui.label(RichText::new("Changes the confetti when you finish a session, level up or hit your goal.").color(p.muted));
+            ui.add_space(6.0);
+        }
         let mut items: Vec<Option<&shop::Item>> = shop::items().iter().filter(|i| i.kind == kind).map(Some).collect();
         if kind != "powerup" {
-            items.insert(0, None); // "no hat" / default theme
+            items.insert(0, None); // take it off / default
         }
-        let equipped = if kind == "hat" { app.dash.hat.clone() } else { app.dash.theme.clone() };
+        let equipped = match kind {
+            "hat" => app.dash.hat.clone(),
+            "accessory" => app.dash.accessory.clone(),
+            "celebration" => app.dash.celebration.clone(),
+            _ => app.dash.theme.clone(),
+        };
         column_grid(ui, 5, 14.0, items.len(), |ui, i, w| {
             let it = items[i];
             let is_eq = match it { Some(x) => equipped.as_deref() == Some(x.id.as_str()), None => equipped.is_none() };
             egui::Frame::new().fill(p.surface).stroke(Stroke::new(2.0, if is_eq { p.green } else { p.line })).corner_radius(18).inner_margin(14).show(ui, |ui| {
                 ui.set_width(w - 32.0);
                 ui.vertical_centered(|ui| {
-                    match (kind, it) {
-                        ("hat", _) => {
-                            widgets::mascot_widget(ui, 100.0, if it.is_some() { Mood::Happy } else { Mood::Idle }, &app.dash.stage_key, it.map(|x| x.id.as_str()));
+                    let id = it.map(|x| x.id.as_str());
+                    match kind {
+                        // previews "try on" the item with the rest of the current outfit
+                        "hat" => {
+                            widgets::mascot_widget(ui, 100.0, if it.is_some() { Mood::Happy } else { Mood::Idle }, &app.dash.stage_key, id, app.dash.accessory.as_deref());
                         }
-                        ("theme", _) => {
-                            let pal = super::theme::palette(it.map(|x| x.id.as_str()));
+                        "accessory" => {
+                            widgets::mascot_widget(ui, 100.0, if it.is_some() { Mood::Happy } else { Mood::Idle }, &app.dash.stage_key, app.dash.hat.as_deref(), id);
+                        }
+                        "celebration" => widgets::confetti_preview(ui, vec2(w - 40.0, 100.0), it),
+                        "theme" => {
+                            let pal = super::theme::palette(id);
                             let accent = it.and_then(|x| x.colors.get("accent")).map(|c| hex(c)).unwrap_or(pal.pink);
                             let (r, _) = ui.allocate_exact_size(vec2(w - 40.0, 64.0), Sense::hover());
                             let third = r.width() / 3.0;
@@ -210,11 +237,15 @@ pub fn shop(app: &mut App, ui: &mut Ui) {
                             ui.label(RichText::new(it.map(|x| x.icon.as_str()).unwrap_or("")).size(54.0));
                         }
                     }
-                    let name = match it { Some(x) => format!("{} {}", x.icon, x.name), None if kind == "hat" => "No hat".into(), None => "Midnight".into() };
+                    let name = match it { Some(x) => format!("{} {}", x.icon, x.name), None => none_label.into() };
                     ui.label(RichText::new(name).font(bold(15.0)));
                     if let Some(x) = it {
                         if !x.desc.is_empty() {
-                            let extra = if x.id == "freeze" { format!(" You have {}/{}.", app.dash.freezes, game::MAX_FREEZES) } else { String::new() };
+                            let extra = match x.id.as_str() {
+                                "freeze" => format!(" You have {}/{}.", app.dash.freezes, game::MAX_FREEZES),
+                                "double_xp" if app.dash.double_xp_until > chrono::Utc::now().timestamp() => " Active now: buying adds time.".into(),
+                                _ => String::new(),
+                            };
                             ui.label(RichText::new(format!("{}.{extra}", x.desc)).size(12.5).color(p.muted));
                         }
                     }
@@ -249,8 +280,13 @@ pub fn shop(app: &mut App, ui: &mut Ui) {
         Some(("buy", id)) => match game::buy(&app.db, &id) {
             Ok(ev) => {
                 app.sound.play("achievement");
+                app.refresh(); // so the confetti uses a celebration that was just bought
                 app.confetti(80);
-                app.toast("🛍️", "Purchased!", "", 1);
+                match ev.unboxed.as_deref().and_then(shop::get) {
+                    Some(prize) => app.toast(&prize.icon, &format!("Mystery box: {}!", prize.name), "It's yours, and Lumi is wearing/using it now.", 0),
+                    None if id == "double_xp" => app.toast("⚡", "Double XP is on!", &format!("Every answer earns 2× XP for {} minutes.", game::DOUBLE_XP_MINUTES), 1),
+                    None => app.toast("🛍️", "Purchased!", "", 1),
+                }
                 app.handle(&ev, false);
             }
             Err(e) => app.error(&e),
