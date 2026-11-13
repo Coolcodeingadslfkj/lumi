@@ -218,3 +218,71 @@ fn render_shop_catalog() {
         img.save(out.join("shop_full.png")).unwrap();
     }
 }
+
+fn click(h: &mut egui_kittest::Harness, x: f32, y: f32) {
+    let pos = egui::pos2(x, y);
+    h.event(egui::Event::PointerMoved(pos));
+    h.run_steps(1);
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        h.run_steps(1);
+    }
+}
+
+/// Regression: leaving a finished test-prep quiz or lesson used to close the app,
+/// and leaving a lesson didn't count it in the plan.
+#[test]
+fn leaving_test_prep_keeps_app_and_progress() {
+    let dir = std::env::temp_dir().join(format!("lumi-leave-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    unsafe { std::env::set_var("LUMI_NO_AUTOSTART", "1") };
+    let db = Db::open_at(&dir).unwrap();
+    seed(&db);
+    let tid = 1i64;
+    let concept = db.int("SELECT concept_id FROM test_concepts WHERE test_id=? ORDER BY idx LIMIT 1", &[&tid]);
+    let mut app: Option<App> = None;
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1360.0, 900.0)).wgpu().build_ui(|ui| {
+        let a = app.get_or_insert_with(|| App::with_ctx(ui.ctx().clone(), db.clone()));
+        a.frame(ui);
+    });
+    h.run_steps(2);
+    set_route(&mut h, Route::Test(tid));
+    h.run_steps(2);
+    // finish a practice quiz, then click "Back to test plan" in the footer
+    let q = json!({"type": "true_false", "concept_id": concept, "prompt": "Q?", "options": ["True", "False"], "correct_index": 0, "explanation": "x"});
+    let req = lumi::ui::quiz::Request { course_id: Some(1), test_id: Some(tid), kind: Some("practice".into()), mode: "practice".into(), return_to: Some(Route::Test(tid)), ..Default::default() };
+    let data = lumi::ui::quiz::Data { course_id: 1, concepts: lumi::model::Concept::many(&db, &[concept]), questions: vec![q.clone(), q.clone(), q], via: "x".into() };
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::unique("test_quiz"), Some((req, data))));
+    h.run_steps(3);
+    for _ in 0..3 {
+        h.key_press(egui::Key::Num1);
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(2);
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+    }
+    h.run_steps(5);
+    click(&mut h, 680.0, 558.0); // "Keep going" on the daily-goal celebration
+    h.run_steps(5);
+    if let Ok(img) = h.render() { img.save("/tmp/before_back.png").unwrap(); }
+    click(&mut h, 1090.0, 846.0);
+    h.run_steps(3);
+    let status: String = db.one("SELECT status FROM test_concepts WHERE test_id=? AND concept_id=?", &[&tid, &concept], |r| r.get(0)).unwrap();
+    assert_eq!(status, "ready", "the practice result is saved");
+
+    // a test-prep lesson that Lumi has taught, then the ← button
+    let c2 = db.int("SELECT concept_id FROM test_concepts WHERE test_id=? AND status!='ready' ORDER BY idx LIMIT 1", &[&tid]);
+    let sid = lumi::actions::new_session(&db, 1, Some(c2), Some(tid));
+    let msgs = json!([{"role": "user", "content": [{"type": "text", "text": "Teach me"}]}, {"role": "assistant", "via": "gemini", "content": [{"type": "text", "text": "Here's the idea."}]}]);
+    db.exec("UPDATE sessions SET messages=? WHERE id=?", &[&msgs.to_string(), &sid]);
+    set_route(&mut h, Route::Learn(sid));
+    h.run_steps(4);
+    click(&mut h, 273.0, 89.0);
+    h.run_steps(3);
+    let done = db.int("SELECT lesson_done FROM test_concepts WHERE test_id=? AND concept_id=?", &[&tid, &c2]);
+    assert_eq!(done, 1, "leaving a taught lesson counts it");
+    if let Ok(img) = h.render() {
+        img.save(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/screens/after_leaving_lesson.png")).unwrap();
+    }
+}

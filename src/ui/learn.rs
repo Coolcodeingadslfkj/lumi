@@ -175,13 +175,12 @@ pub fn show(app: &mut App, ui: &mut Ui, sid: i64) {
             send(app, t, true);
         }
     }
+    // Leaving clears the lesson state, so it waits until this frame is drawn.
+    let mut leave = false;
     egui::Panel::top("learn_head").frame(egui::Frame::new().inner_margin(egui::Margin { left: 0, right: 0, top: 4, bottom: 10 })).show(ui, |ui| {
         ui.horizontal(|ui| {
             if widgets::button_sized(ui, "←", p.surface2, true, 13.0, 0.0).clicked() {
-                match session.test_id {
-                    Some(t) => app.go(Route::Test(t)),
-                    None => app.go(Route::Course(session.course_id, Tab::Lessons)),
-                }
+                leave = true;
             }
             ui.vertical(|ui| {
                 ui.label(RichText::new(&session.title).font(bold(18.0)));
@@ -195,6 +194,7 @@ pub fn show(app: &mut App, ui: &mut Ui, sid: i64) {
                 if let Some(c) = &concept {
                     let (label, kind) = if session.test_id.is_some() { ("✅ Ready to practice", Some("practice".to_string())) } else { ("⚡ Practice this", None) };
                     if widgets::button_sized(ui, label, p.green, true, 13.0, 0.0).clicked() {
+                        mark_lesson_done(app, &session);
                         super::quiz::start(app, super::quiz::Request {
                             course_id: Some(session.course_id), concept_ids: vec![c.id], count: 8, test_id: session.test_id, kind,
                             return_to: session.test_id.map(Route::Test), ..Default::default()
@@ -211,6 +211,22 @@ pub fn show(app: &mut App, ui: &mut Ui, sid: i64) {
             super::column(ui, 860.0, |ui| messages(app, ui, &session, &course));
         });
     });
+    if leave {
+        mark_lesson_done(app, &session);
+        match session.test_id {
+            Some(t) => app.go(Route::Test(t)),
+            None => app.go(Route::Course(session.course_id, Tab::Lessons)),
+        }
+    }
+}
+
+/// A test-prep lesson counts as done once Lumi has taught it, so the plan moves on to practice.
+fn mark_lesson_done(app: &App, session: &Session) {
+    let (Some(test), Some(concept)) = (session.test_id, session.concept_id) else { return };
+    let taught = app.learn.as_ref().is_some_and(|st| st.msgs.iter().any(|m| !m.user));
+    if taught {
+        app.db.exec("UPDATE test_concepts SET lesson_done=1, status=CASE WHEN status='todo' THEN 'learning' ELSE status END WHERE test_id=? AND concept_id=?", &[&test, &concept]);
+    }
 }
 
 fn messages(app: &mut App, ui: &mut Ui, session: &Session, course: &Course) {

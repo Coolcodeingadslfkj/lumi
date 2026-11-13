@@ -103,6 +103,14 @@ pub struct Run {
     deadline: f64,
     record: Option<i64>,
     t_end: f64,
+    /// Set by buttons while the screen is being drawn; acted on once the frame is done,
+    /// because closing mid-frame would leave the rest of the screen without a quiz to draw.
+    exit: Option<Exit>,
+}
+
+enum Exit {
+    Close,
+    Restart,
 }
 
 impl Run {
@@ -207,7 +215,7 @@ pub fn on_ready(app: &mut App, req: Request, r: Result<Data, String>) {
             let mut run = Run {
                 req, data, queue, cur: None, q: QState::default(), phase: Phase::Answer, total, results: HashMap::new(), solved: 0,
                 combo: 0, best: 0, hearts: 3, xp: 0, first_right: 0, t0, deferred: Events::default(), boss_hp: boss_max, boss_max,
-                boss_hit: -10.0, hurt: -10.0, req_id: 0, out: None, before, deadline: t0 + game::LIGHTNING_SECONDS, record: None, t_end: 0.0,
+                boss_hit: -10.0, hurt: -10.0, req_id: 0, out: None, before, deadline: t0 + game::LIGHTNING_SECONDS, record: None, t_end: 0.0, exit: None,
             };
             next(&mut run);
             app.quiz = Some(run);
@@ -552,7 +560,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             if ui.add(egui::Button::new(RichText::new("✕").size(24.0).color(p.faint)).frame(false)).on_hover_text("Quit").clicked() {
                 let run = app.quiz.as_ref().unwrap();
                 if run.solved == 0 || matches!(run.phase, Phase::Results) {
-                    close(app);
+                    app.quiz.as_mut().unwrap().exit = Some(Exit::Close);
                 } else {
                     app.dialog = Some(Dialog::Confirm { title: "Wait, don't go!".into(), body: "You'll lose this session's completion bonus if you quit now.".into(), action: Confirm::QuitQuiz });
                 }
@@ -624,7 +632,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         match app.quiz.as_ref().map(|r| &r.phase) {
             Some(Phase::Answer) if can_check(app) => check(app, false),
             Some(Phase::Feedback(_)) => advance(app),
-            Some(Phase::Results) => close(app),
+            Some(Phase::Results) => app.quiz.as_mut().unwrap().exit = Some(Exit::Close),
             _ => {}
         }
     }
@@ -641,6 +649,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
             }
         }
+    }
+    // the whole screen is drawn: now it's safe to leave
+    match app.quiz.as_mut().and_then(|r| r.exit.take()) {
+        Some(Exit::Close) => close(app),
+        Some(Exit::Restart) => {
+            let req = app.quiz.take().unwrap().req;
+            start(app, req);
+        }
+        None => {}
     }
 }
 
@@ -1046,14 +1063,13 @@ fn footer(app: &mut App, ui: &mut Ui) {
                 let again = if lost { Some("⚔️ Rematch") } else if lightning { Some("⚡ Play again") } else { None };
                 if let Some(label) = again {
                     if widgets::button(ui, label, p.surface2, true).clicked() {
-                        let req = app.quiz.take().unwrap().req;
-                        start(app, req);
+                        app.quiz.as_mut().unwrap().exit = Some(Exit::Restart);
                         return;
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::button_sized(ui, if back { "Back to test plan" } else { "Continue" }, p.green, true, 15.0, 160.0).clicked() {
-                        close(app);
+                        app.quiz.as_mut().unwrap().exit = Some(Exit::Close);
                     }
                 });
             });
